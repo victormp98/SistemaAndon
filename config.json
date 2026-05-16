@@ -1,0 +1,17 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 3000
+  },
+  "database": {
+    "path": "data/database.sqlite"
+  },
+  "app": {
+    "name": "Laboratorio Industrial",
+    "mode": "local-lan"
+  },
+  "auth": {
+    "jwtSecret": "local-development-secret-change-me",
+    "jwtExpiresIn": "8h"
+  }
+}

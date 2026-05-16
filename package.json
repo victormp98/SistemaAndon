@@ -1,0 +1,28 @@
+{
+  "name": "sistemaandon",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/victormp98/SistemaAndon.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/victormp98/SistemaAndon/issues"
+  },
+  "homepage": "https://github.com/victormp98/SistemaAndon#readme",
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
