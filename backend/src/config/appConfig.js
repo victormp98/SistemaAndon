@@ -18,4 +18,25 @@ try {
   };
 }
 
+config.server = {
+  ...config.server,
+  host: process.env.HOST || config.server?.host || '0.0.0.0',
+  port: Number(process.env.PORT || config.server?.port || 3000)
+};
+
+config.database = {
+  ...config.database,
+  path: process.env.DATABASE_PATH || config.database?.path || 'data/database.sqlite'
+};
+
+config.auth = {
+  ...config.auth,
+  jwtSecret: process.env.JWT_SECRET,
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN || config.auth?.jwtExpiresIn || '8h'
+};
+
+if (!process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET is required. Configure it in the local .env file.');
+}
+
 module.exports = config;

@@ -20,13 +20,7 @@ const ordersService = {
   },
 
   async setOrderStatus(id, status) {
-    const token = authService.getToken();
-    const response = await fetch(`http://localhost:3000/api/orders/${id}/status`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ status })
-    });
-    return response.json();
+    return apiClient.patch(`/orders/${id}/status`, { status }, authService.getToken());
   }
 };
 

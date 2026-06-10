@@ -1,126 +1,246 @@
-# Laboratorio Industrial - Sistema Andon
+# Sistema Andon
 
-Aplicación portable para Windows diseñada para funcionamiento en red local (LAN) offline.
+Aplicación web para prácticas de producción industrial en una red local. Usa React
+en el navegador, Node.js como servidor y una base SQLite almacenada en un archivo.
 
-## Tecnologías Base
-- **Frontend**: React + Vite
-- **Backend**: Node.js + Express
-- **Tiempo Real**: Socket.IO
-- **Base de Datos**: SQLite local
+## Estado actual
 
-## Estructura del Proyecto
-- `backend/`: Código fuente del servidor Express y Socket.IO.
-- `frontend/`: Código fuente de la aplicación React.
-- `data/`: Almacenamiento de la base de datos SQLite (`database.sqlite`).
-- `logs/`: Directorio para registros del sistema.
-- `backups/`: Directorio para respaldos de la base de datos.
-- `config.json`: Configuración global (puerto, host, rutas).
+El sistema administra alumnos, laboratorios, líneas, estaciones, simulaciones,
+órdenes y tickets. Incluye ciclo de simulación, panel Andon, dashboard, reportes
+CSV, incidentes, paros, configuración local y respaldos SQLite.
+
+Estados de simulación:
+
+```text
+draft -> ready -> running -> paused -> completed
+   \        \          \          \
+    +--------+----------+-----------> cancelled
+```
 
 ## Requisitos
-- Node.js (v18 o superior recomendado)
-- npm
 
-## Instalación
-Desde la raíz del proyecto:
+- Windows 10/11.
+- Node.js 22 LTS, versión 22.13.0 o posterior.
+- npm, incluido con Node.js.
+- Git, recomendado.
 
-1. Instalar dependencias globales y orquestador:
-   ```bash
-   npm install
-   ```
+Comprueba la instalación:
 
-2. Instalar dependencias del backend:
-   ```bash
-   cd backend
-   npm install
-   cd ..
-   ```
+```powershell
+nvm use 22.13.0
+node --version
+npm --version
+```
 
-3. Instalar dependencias del frontend:
-   ```bash
-   cd frontend
-   npm install
-   cd ..
-   ```
+Vite 8 y ESLint 10 no funcionan con Node.js 18. Se debe utilizar Node.js 22.13
+o una versión compatible posterior.
 
-## Ejecución en Desarrollo
-Para ejecutar backend y frontend simultáneamente:
-```bash
+## Instalación inicial
+
+Desde la raíz del repositorio:
+
+```powershell
+npm run bootstrap
+```
+
+El archivo `.env` es configuración privada de esta instalación y no se guarda en
+Git. Ya debe existir en el entorno de desarrollo o en el paquete portable.
+
+## Ejecución en desarrollo
+
+Inicia backend y frontend:
+
+```powershell
 npm run dev
 ```
 
-O por separado:
-- Backend: `npm run dev:backend`
-- Frontend: `npm run dev:frontend`
+Direcciones:
 
-## Credenciales de Desarrollo
-Para las pruebas iniciales, se crea automáticamente un usuario administrador:
-- **Usuario:** `admin`
-- **Correo:** `admin@local.test`
-- **Contraseña:** `admin123`
+- Interfaz local: `http://localhost:5173`
+- API directa: `http://localhost:3000/api/health`
+- Interfaz desde otra computadora: `http://IP_DEL_SERVIDOR:5173`
 
-## Verificación de Salud e Inspección
-- API Health: `http://localhost:3000/api/health`
-- DB Status: `http://localhost:3000/api/db/status`
-- Auth Check: `http://localhost:3000/api/auth/me` (Requiere Bearer Token)
-- Frontend: `http://localhost:5173`
+Para conocer la IP del servidor:
 
-## Endpoints de Gestión (Módulo Alumnos)
-Todos requieren `user_type: professor`.
-- `GET /api/students`: Listado y búsqueda (`?search=`).
-- `POST /api/students`: Registro de alumno (genera contraseña temporal).
-- `PUT /api/students/:id`: Actualización de datos.
-- `PATCH /api/students/:id/status`: Activar/Desactivar.
-- `POST /api/students/:id/reset-password`: Resetear contraseña.
+```powershell
+ipconfig
+```
 
-## Endpoints de Gestión (Módulo Laboratorios)
-Todos requieren `user_type: professor`.
-- `GET /api/laboratories`: Listado de laboratorios.
-- `POST /api/laboratories`: Crear laboratorio.
-- `PUT /api/laboratories/:id`: Editar laboratorio.
-- `PATCH /api/laboratories/:id/status`: Activar/Desactivar.
-- `GET /api/laboratories/:id/lines`: Listar líneas de un laboratorio.
-- `POST /api/laboratories/:id/lines`: Crear línea.
-- `GET /api/lines/:lineId/stations`: Listar estaciones de una línea.
-- `POST /api/lines/:lineId/stations`: Crear estación.
+Busca la dirección IPv4 del adaptador de red activo. Si Windows pregunta por el
+firewall, permite Node.js únicamente en redes privadas.
 
-## Endpoints de Gestión (Módulo Simulaciones)
-Todos requieren `user_type: professor`.
-- `GET /api/simulations`: Listado de simulaciones.
-- `GET /api/simulations/:id`: Detalle completo (incluye participantes).
-- `POST /api/simulations`: Crear simulación (estado `draft`).
-- `PUT /api/simulations/:id`: Editar datos básicos (solo en `draft`).
-- `PATCH /api/simulations/:id/status`: Cambiar estado (`draft`, `cancelled`).
-- `POST /api/simulations/:id/participants`: Asignar o actualizar participante.
-- `DELETE /api/simulations/:id/participants/:pId`: Quitar participante.
+## Ejecución de producción
 
-## Endpoints de Gestión (Módulo Órdenes y Tickets)
-Todos requieren `user_type: professor`.
-- `GET /api/orders?simulation_id=<id>`: Listado de órdenes (filtrable por simulación).
-- `GET /api/orders/:id`: Detalle de orden con tickets incluidos.
-- `POST /api/orders`: Crear orden (genera código OP-XXXX automáticamente, estado `draft`).
-- `PUT /api/orders/:id`: Editar datos (solo si draft y sin tickets).
-- `PATCH /api/orders/:id/status`: Cambiar estado (`draft`, `cancelled`).
-- `POST /api/orders/:id/generate-tickets`: Genera `target_quantity` tickets, cada uno asignado a la primera estación activa de la línea. Solo una vez por orden.
+Compila el frontend una vez:
 
-## Endpoints de Operación (Módulo Operador)
-Requieren `user_type: student` y asignación como `operator` en una simulación activa o preparada.
-- `GET /api/operator/context`: Devuelve el contexto operativo del alumno (simulación, línea, estación).
-- `GET /api/operator/tickets`: Lista los tickets con estado `available` en la estación del operador.
-- `GET /api/operator/current-ticket`: Devuelve el ticket con estado `in_progress` que está trabajando el operador.
-- `POST /api/operator/tickets/:ticketId/start`: Cambia un ticket a `in_progress`, asigna el operador actual y emite eventos de WebSocket.
+```powershell
+npm run build
+```
 
-## Modelo de Datos Inicial
-El sistema utiliza SQLite para persistencia local. Las tablas principales incluyen:
-- **Usuarios y Autenticación:** `users` (con hashing `bcryptjs`), `simulation_participants`.
-- **Estructura Industrial:** `laboratories`, `production_lines`, `stations`.
-- **Operación:** `simulations`, `production_orders`, `production_tickets`.
-- **Trazabilidad y Eventos:** `ticket_station_logs`, `production_events`, `incidents`, `downtime_events`.
-- **Metadata y Configuración:** `app_metadata`, `app_settings`, `kpi_snapshots`.
+Después inicia un único servidor:
 
-## Seguridad
-- Las contraseñas se almacenan hasheadas con un factor de costo de 10.
-- La autenticación se maneja mediante JWT (JSON Web Tokens).
-- El secreto de firma se encuentra en `config.json`.
+```powershell
+npm start
+```
 
-## Notas
-Este proyecto está configurado para ejecutarse localmente sin dependencia de servicios en la nube.
+La aplicación completa estará disponible en:
+
+```text
+http://localhost:3000
+http://IP_DEL_SERVIDOR:3000
+```
+
+Cada cambio en el frontend requiere ejecutar de nuevo `npm run build`. Los
+cambios de backend solo requieren reiniciar `npm start`.
+
+## Base de datos
+
+No se requiere instalar un servidor de base de datos. El proyecto usa SQLite y
+crea automáticamente:
+
+```text
+data/database.sqlite
+```
+
+Las migraciones, tablas e índices se aplican automáticamente al arrancar.
+SQLite utiliza claves foráneas, modo WAL y espera controlada por bloqueos.
+El usuario administrador inicial también se crea automáticamente.
+Credenciales iniciales:
+
+```text
+Usuario: admin
+Contraseña: admin123
+```
+
+Estas credenciales sirven únicamente para el primer acceso. El sistema obliga a
+cambiar la contraseña antes de permitir otras operaciones.
+
+### Consultar la base
+
+La forma más sencilla es instalar DB Browser for SQLite y abrir:
+
+```text
+D:\Proyectos\SistemaAndon\data\database.sqlite
+```
+
+También puede usarse la consola oficial de SQLite:
+
+```powershell
+sqlite3 .\data\database.sqlite
+```
+
+Ejemplos dentro de SQLite:
+
+```sql
+.tables
+SELECT id, name, username, user_type, is_active FROM users;
+.quit
+```
+
+No edites la base mientras el sistema está procesando tickets.
+
+### Respaldar la base
+
+La pantalla de configuración permite crear respaldos consistentes mientras el
+servidor está activo. También puedes detenerlo y copiarla manualmente:
+
+```powershell
+$stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+Copy-Item .\data\database.sqlite ".\backups\database-$stamp.sqlite"
+```
+
+Para restaurar, detén el servidor y reemplaza `data/database.sqlite` por una
+copia válida.
+
+## Configuración
+
+El archivo `.env` admite:
+
+```dotenv
+HOST=0.0.0.0
+PORT=3000
+DATABASE_PATH=data/database.sqlite
+JWT_SECRET=replace-with-a-long-random-secret
+JWT_EXPIRES_IN=8h
+```
+
+`.env` y la base SQLite son archivos locales y no deben subirse a Git.
+
+## Docker
+
+Docker no es necesario para la etapa actual. La aplicación está diseñada para
+ejecutarse en una sola computadora Windows y SQLite ya está embebido.
+
+Una imagen Docker tendría sentido cuando se necesite:
+
+- instalación idéntica en varias máquinas;
+- despliegue automatizado;
+- ejecución como servicio administrado;
+- aislamiento de versiones.
+
+Antes de contenerizar deben resolverse las migraciones, respaldos, seguridad LAN
+y persistencia del volumen SQLite.
+
+## Comandos
+
+```powershell
+npm run bootstrap       # Instala todas las dependencias
+npm run dev             # Desarrollo: puertos 5173 y 3000
+npm run build           # Compila el frontend
+npm start               # Producción: aplicación completa en puerto 3000
+npm run dev:backend     # Solo backend
+npm run dev:frontend    # Solo frontend
+npm --prefix frontend run lint
+```
+
+La suite de integración se ejecuta con:
+
+```powershell
+npm test
+```
+
+Valida autenticación, cambio de contraseña, estructura industrial, simulaciones,
+órdenes, concurrencia de tickets, incidentes, paros, reportes y respaldos.
+
+## Estructura
+
+```text
+SistemaAndon/
+|-- backend/
+|   |-- src/
+|   |-- test/
+|   |-- package.json
+|   `-- package-lock.json
+|-- frontend/
+|   |-- public/
+|   |-- src/
+|   |-- package.json
+|   `-- package-lock.json
+|-- data/                # Base SQLite local, ignorada por Git
+|-- backups/             # Respaldos locales, ignorados por Git
+|-- logs/                # Registros locales, ignorados por Git
+|-- .gitignore
+|-- config.json
+|-- package.json
+`-- package-lock.json
+```
+
+Las carpetas `node_modules` no forman parte del código fuente. Se crean con
+`npm run bootstrap` y pueden borrarse y regenerarse.
+
+## Verificación antes de entregar cambios
+
+```powershell
+npm test
+npm --prefix frontend run lint
+npm run build
+npm audit
+npm --prefix backend audit
+npm --prefix frontend audit
+```
+
+## Pendiente
+
+La etapa pendiente es el punto 10: refinamiento visual final y generación del
+paquete portable para USB con runtime de Node incluido y prueba en una
+computadora Windows limpia sin acceso a internet.

@@ -15,17 +15,11 @@ const simulationsService = {
   },
 
   async updateSimulation(id, data) {
-    const token = authService.getToken();
-    const response = await fetch(`http://localhost:3000/api/simulations/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify(data)
-    });
-    return response.json();
+    return apiClient.put(`/simulations/${id}`, data, authService.getToken());
   },
 
   async setSimulationStatus(id, status) {
-    return apiClient.post(`/simulations/${id}/status`, { status }, authService.getToken());
+    return apiClient.patch(`/simulations/${id}/status`, { status }, authService.getToken());
   },
 
   async addParticipant(simulationId, participantData) {

@@ -1,47 +1,29 @@
-const sqlite3 = require('sqlite3').verbose();
+const fs = require('fs');
 const path = require('path');
+const sqlite3 = require('sqlite3').verbose();
 const config = require('../config/appConfig');
 const { initSchema, seedInitialAdmin } = require('./schema');
+const { run } = require('./dbUtils');
 
-const dbPath = path.join(__dirname, '../../../', config.database.path);
+const dbPath = path.resolve(__dirname, '../../../', config.database.path);
+fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
-const db = new sqlite3.Database(dbPath, (err) => {
-  if (err) {
-    console.error('Error opening database:', err.message);
-  } else {
-    console.log('Connected to the SQLite database at:', dbPath);
-    initializeDatabase();
-  }
+const db = new sqlite3.Database(dbPath);
+
+const ready = (async () => {
+  await run(db, 'PRAGMA foreign_keys = ON');
+  await run(db, 'PRAGMA journal_mode = WAL');
+  await run(db, 'PRAGMA busy_timeout = 5000');
+  await run(db, 'PRAGMA synchronous = NORMAL');
+  await initSchema(db);
+  await seedInitialAdmin(db);
+  return db;
+})().catch((error) => {
+  console.error('Database initialization failed:', error);
+  throw error;
 });
 
-function initializeDatabase() {
-  db.serialize(async () => {
-    // 1. Create a basic metadata table as requested
-    db.run(`CREATE TABLE IF NOT EXISTS app_metadata (
-      key TEXT PRIMARY KEY,
-      value TEXT
-    )`, (err) => {
-      if (err) {
-        console.error('Error creating app_metadata table:', err.message);
-      } else {
-        db.run(`INSERT OR IGNORE INTO app_metadata (key, value) VALUES ('version', '1.0.0')`);
-        db.run(`INSERT OR IGNORE INTO app_metadata (key, value) VALUES ('initialized_at', ?)`, [new Date().toISOString()]);
-        
-        // 2. Initialize the full schema and seed data
-        initSchema(db)
-          .then(() => {
-            console.log('Database schema initialized successfully.');
-            return seedInitialAdmin(db);
-          })
-          .then(() => {
-            console.log('Database ready.');
-          })
-          .catch((schemaErr) => {
-            console.error('Error initializing database:', schemaErr);
-          });
-      }
-    });
-  });
-}
+db.ready = ready;
+db.path = dbPath;
 
 module.exports = db;

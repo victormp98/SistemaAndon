@@ -15,11 +15,10 @@ module.exports = (req, res, next) => {
   const token = authHeader.split(' ')[1];
 
   try {
-    const secret = config.auth?.jwtSecret || 'local-development-secret-change-me';
-    const decoded = jwt.verify(token, secret);
+    const decoded = jwt.verify(token, config.auth.jwtSecret);
 
     // Verify user in DB
-    const query = "SELECT id, name, username, email, user_type, is_active FROM users WHERE id = ? AND is_active = 1";
+    const query = "SELECT id, name, username, email, user_type, is_active, must_change_password FROM users WHERE id = ? AND is_active = 1";
     db.get(query, [decoded.id], (err, user) => {
       if (err || !user) {
         return res.status(401).json({ 
@@ -29,6 +28,13 @@ module.exports = (req, res, next) => {
       }
 
       req.user = user;
+      if (user.must_change_password && !['/change-password', '/me'].includes(req.path)) {
+        return res.status(403).json({
+          ok: false,
+          code: 'PASSWORD_CHANGE_REQUIRED',
+          error: 'Debes cambiar tu contraseña antes de continuar.'
+        });
+      }
       next();
     });
   } catch (error) {

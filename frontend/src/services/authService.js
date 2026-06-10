@@ -15,6 +15,13 @@ const authService = {
     return apiClient.get('/auth/me', token);
   },
 
+  async changePassword(currentPassword, newPassword) {
+    return apiClient.post('/auth/change-password', {
+      current_password: currentPassword,
+      new_password: newPassword
+    }, this.getToken());
+  },
+
   logout() {
     localStorage.removeItem('token');
   },

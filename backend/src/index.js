@@ -1,48 +1,31 @@
-const express = require('express');
 const http = require('http');
-const cors = require('cors');
-const path = require('path');
 const config = require('./config/appConfig');
-const healthRoutes = require('./routes/health.routes');
-const dbRoutes = require('./routes/db.routes');
-const authRoutes = require('./routes/auth.routes');
-const studentsRoutes = require('./routes/students.routes');
-const laboratoriesRoutes = require('./routes/laboratories.routes');
-const simulationsRoutes = require('./routes/simulations.routes');
-const ordersRoutes = require('./routes/orders.routes');
-const operatorRoutes = require('./routes/operator.routes');
+const db = require('./database/connection');
+const createApp = require('./app');
 const setupSockets = require('./sockets/socketServer');
+const { ensureDailyBackup } = require('./services/backupService');
 
-const app = express();
-const server = http.createServer(app);
+async function start() {
+  await db.ready;
+  await ensureDailyBackup();
+  const app = createApp();
+  const server = http.createServer(app);
+  const io = setupSockets(server);
+  app.set('io', io);
 
-// Middleware
-app.use(cors());
-app.use(express.json());
+  server.listen(config.server.port, config.server.host, () => {
+    console.log(`${config.app.name} running at http://localhost:${config.server.port}`);
+  });
 
-// Routes
-app.use('/api', healthRoutes);
-app.use('/api/db', dbRoutes);
-app.use('/api/auth', authRoutes);
-app.use('/api/students', studentsRoutes);
-app.use('/api/laboratories', laboratoriesRoutes);
-app.use('/api/simulations', simulationsRoutes);
-app.use('/api/orders', ordersRoutes);
-app.use('/api/operator', operatorRoutes);
+  const shutdown = () => {
+    server.close(() => db.close(() => process.exit(0)));
+    setTimeout(() => process.exit(1), 10_000).unref();
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+}
 
-// Socket.IO
-const io = setupSockets(server);
-app.set('io', io);
-
-// Start server
-const PORT = config.server.port || 3000;
-const HOST = config.server.host || '0.0.0.0';
-
-server.listen(PORT, HOST, () => {
-  console.log(`-------------------------------------------`);
-  console.log(`${config.app.name} Server running`);
-  console.log(`Mode: ${config.app.mode}`);
-  console.log(`Local: http://localhost:${PORT}`);
-  console.log(`LAN: http://${HOST}:${PORT}`);
-  console.log(`-------------------------------------------`);
+start().catch((error) => {
+  console.error(error);
+  process.exit(1);
 });

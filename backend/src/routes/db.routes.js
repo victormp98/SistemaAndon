@@ -3,8 +3,10 @@ const router = express.Router();
 const config = require('../config/appConfig');
 const db = require('../database/connection');
 const path = require('path');
+const authMiddleware = require('../middleware/authMiddleware');
+const { requireProfessor } = require('../middleware/roleMiddleware');
 
-router.get('/status', (req, res) => {
+router.get('/status', authMiddleware, requireProfessor, (req, res) => {
   const dbPath = path.resolve(__dirname, '../../../', config.database.path);
 
   // Query to get all tables
@@ -24,7 +26,6 @@ router.get('/status', (req, res) => {
     res.status(200).json({
       ok: true,
       service: "Database Inspector",
-      databasePath: dbPath,
       tables: tables,
       tableCount: tables.length,
       timestamp: new Date().toISOString()

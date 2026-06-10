@@ -14,31 +14,11 @@ const studentsService = {
   },
 
   async updateStudent(id, studentData) {
-    const token = authService.getToken();
-    // PUT /api/students/:id
-    const response = await fetch(`http://localhost:3000/api/students/${id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(studentData)
-    });
-    return response.json();
+    return apiClient.put(`/students/${id}`, studentData, authService.getToken());
   },
 
   async setStudentStatus(id, isActive) {
-    const token = authService.getToken();
-    // PATCH /api/students/:id/status
-    const response = await fetch(`http://localhost:3000/api/students/${id}/status`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ is_active: isActive })
-    });
-    return response.json();
+    return apiClient.patch(`/students/${id}/status`, { is_active: isActive }, authService.getToken());
   },
 
   async resetPassword(id, temporaryPassword = '') {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import authService from '../services/authService';
 
 const LoginPage = ({ user, onLoginSuccess }) => {
@@ -8,9 +8,6 @@ const LoginPage = ({ user, onLoginSuccess }) => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   
-  const location = useLocation();
-  const from = location.state?.from?.pathname || (user?.user_type === 'professor' ? '/profesor' : '/alumno');
-
   if (user) {
     return <Navigate to={user.user_type === 'professor' ? '/profesor' : '/alumno'} replace />;
   }
@@ -27,7 +24,7 @@ const LoginPage = ({ user, onLoginSuccess }) => {
       } else {
         setError(data.error || 'Credenciales inválidas');
       }
-    } catch (err) {
+    } catch {
       setError('Error de conexión con el servidor');
     } finally {
       setLoading(false);
@@ -74,9 +71,6 @@ const LoginPage = ({ user, onLoginSuccess }) => {
           </button>
         </form>
         
-        <div className="login-footer">
-          <p>Usa <code>admin</code> / <code>admin123</code> para pruebas.</p>
-        </div>
       </div>
     </div>
   );

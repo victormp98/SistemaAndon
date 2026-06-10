@@ -118,13 +118,16 @@ const SimulationsPage = () => {
     } catch (err) { alert('Error de conexión.'); }
   };
 
-  const handleCancelSim = async () => {
-    if (!window.confirm('¿Cancelar esta simulación?')) return;
+  const handleStatus = async (status) => {
+    if (status === 'cancelled' && !window.confirm('¿Cancelar esta simulación?')) return;
     try {
-      const res = await simulationsService.setSimulationStatus(selectedSim.id, 'cancelled');
-      if (res.ok) fetchSimulations();
+      const res = await simulationsService.setSimulationStatus(selectedSim.id, status);
+      if (res.ok) {
+        await fetchSimulations();
+        setSelectedSim({ ...selectedSim, status });
+      }
       else alert(res.error);
-    } catch (err) { alert('Error de conexión.'); }
+    } catch { alert('Error de conexión.'); }
   };
 
   return (
@@ -186,10 +189,16 @@ const SimulationsPage = () => {
                     <span className={`status-pill ${selectedSim.status}`}>{selectedSim.status}</span>
                   </div>
                   <div className="sim-actions">
-                    {selectedSim.status === 'draft' && (
-                      <button className="btn-outline btn-warn-outline" onClick={handleCancelSim}>Cancelar</button>
+                    {selectedSim.status === 'draft' && <button className="btn-primary" onClick={() => handleStatus('ready')}>Preparar</button>}
+                    {selectedSim.status === 'ready' && <>
+                      <button className="btn-secondary" onClick={() => handleStatus('draft')}>Volver a borrador</button>
+                      <button className="btn-primary" onClick={() => handleStatus('running')}>Iniciar</button>
+                    </>}
+                    {selectedSim.status === 'running' && <button className="btn-primary" onClick={() => handleStatus('paused')}>Pausar</button>}
+                    {selectedSim.status === 'paused' && <button className="btn-primary" onClick={() => handleStatus('running')}>Reanudar</button>}
+                    {['draft', 'ready', 'running', 'paused'].includes(selectedSim.status) && (
+                      <button className="btn-outline btn-warn-outline" onClick={() => handleStatus('cancelled')}>Cancelar</button>
                     )}
-                    <button className="btn-primary" disabled>Iniciar Simulación (Próximamente)</button>
                   </div>
                 </header>
 
@@ -230,16 +239,16 @@ const SimulationsPage = () => {
                         {participants.length > 0 ? (
                           participants.map(p => (
                             <tr key={p.id}>
-                              <td>
+                              <td data-label="Usuario">
                                 <strong>{p.user_name}</strong>
                                 <br /><small>@{p.username}</small>
                               </td>
-                              <td><span className={`role-badge ${p.simulation_role}`}>{p.simulation_role}</span></td>
-                              <td>
+                              <td data-label="Rol"><span className={`role-badge ${p.simulation_role}`}>{p.simulation_role}</span></td>
+                              <td data-label="Asignación">
                                 {p.simulation_role === 'supervisor' ? `Línea: ${p.line_name || '?'}` : 
                                  p.simulation_role === 'operator' ? `Estación: ${p.station_name || '?'}` : '---'}
                               </td>
-                              <td>
+                              <td data-label="Acciones">
                                 {selectedSim.status === 'draft' && (
                                   <button className="btn-icon btn-warn" onClick={() => handleRemoveParticipant(p.id)}>🗑️</button>
                                 )}

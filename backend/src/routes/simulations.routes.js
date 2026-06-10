@@ -1,210 +1,230 @@
 const express = require('express');
-const router = express.Router();
 const db = require('../database/connection');
+const { run, get, all, transaction } = require('../database/dbUtils');
 const authMiddleware = require('../middleware/authMiddleware');
 const { requireProfessor } = require('../middleware/roleMiddleware');
+const asyncHandler = require('../middleware/asyncHandler');
+const httpError = require('../utils/httpError');
+const { canTransition } = require('../domain/simulationLifecycle');
 
-router.use(authMiddleware);
-router.use(requireProfessor);
+const router = express.Router();
+router.use(authMiddleware, requireProfessor);
 
-/**
- * GET /api/simulations
- * List simulations with participant count and lab name
- */
-router.get('/', (req, res) => {
-  const query = `
-    SELECT s.*, l.name as laboratory_name,
-      (SELECT COUNT(*) FROM simulation_participants WHERE simulation_id = s.id) as participant_count
-    FROM simulations s
-    JOIN laboratories l ON s.laboratory_id = l.id
-    ORDER BY s.created_at DESC
-  `;
-  db.all(query, [], (err, rows) => {
-    if (err) return res.status(500).json({ ok: false, error: err.message });
-    res.json({ ok: true, simulations: rows });
-  });
-});
+router.get('/', asyncHandler(async (req, res) => {
+  const simulations = await all(
+    db,
+    `SELECT s.*, l.name AS laboratory_name,
+       (SELECT COUNT(*) FROM simulation_participants WHERE simulation_id = s.id) AS participant_count,
+       (SELECT COUNT(*) FROM production_orders WHERE simulation_id = s.id) AS order_count
+     FROM simulations s
+     JOIN laboratories l ON l.id = s.laboratory_id
+     ORDER BY s.created_at DESC`
+  );
+  res.json({ ok: true, simulations });
+}));
 
-/**
- * GET /api/simulations/:id
- * Detail of a simulation with participants
- */
-router.get('/:id', (req, res) => {
-  const { id } = req.params;
-  
-  const simQuery = `
-    SELECT s.*, l.name as laboratory_name 
-    FROM simulations s 
-    JOIN laboratories l ON s.laboratory_id = l.id 
-    WHERE s.id = ?
-  `;
-  
-  db.get(simQuery, [id], (err, simulation) => {
-    if (err) return res.status(500).json({ ok: false, error: err.message });
-    if (!simulation) return res.status(404).json({ ok: false, error: 'Simulación no encontrada.' });
+router.get('/:id', asyncHandler(async (req, res) => {
+  const simulation = await get(
+    db,
+    `SELECT s.*, l.name AS laboratory_name
+     FROM simulations s JOIN laboratories l ON l.id = s.laboratory_id WHERE s.id = ?`,
+    [req.params.id]
+  );
+  if (!simulation) throw httpError(404, 'Simulación no encontrada.');
+  const participants = await all(
+    db,
+    `SELECT p.*, u.name AS user_name, u.username, pl.name AS line_name, st.name AS station_name
+     FROM simulation_participants p
+     JOIN users u ON u.id = p.user_id
+     LEFT JOIN production_lines pl ON pl.id = p.line_id
+     LEFT JOIN stations st ON st.id = p.station_id
+     WHERE p.simulation_id = ? ORDER BY u.name`,
+    [simulation.id]
+  );
+  res.json({ ok: true, simulation, participants });
+}));
 
-    const participantsQuery = `
-      SELECT p.*, u.name as user_name, u.username, 
-             pl.name as line_name, st.name as station_name
-      FROM simulation_participants p
-      JOIN users u ON p.user_id = u.id
-      LEFT JOIN production_lines pl ON p.line_id = pl.id
-      LEFT JOIN stations st ON p.station_id = st.id
-      WHERE p.simulation_id = ?
-    `;
+router.post('/', asyncHandler(async (req, res) => {
+  if (!req.body.laboratory_id || !String(req.body.name || '').trim()) {
+    throw httpError(400, 'Laboratorio y nombre son obligatorios.');
+  }
+  const lab = await get(db, 'SELECT id FROM laboratories WHERE id = ? AND is_active = 1', [req.body.laboratory_id]);
+  if (!lab) throw httpError(400, 'Laboratorio inválido o inactivo.');
+  const duration = Number(req.body.planned_duration_minutes || 60);
+  if (!Number.isInteger(duration) || duration < 1 || duration > 1440) {
+    throw httpError(400, 'La duración debe estar entre 1 y 1440 minutos.');
+  }
+  const result = await run(
+    db,
+    `INSERT INTO simulations
+      (laboratory_id, name, description, planned_duration_minutes, created_by_user_id, status)
+     VALUES (?, ?, ?, ?, ?, 'draft')`,
+    [lab.id, String(req.body.name).trim(), req.body.description || null, duration, req.user.id]
+  );
+  res.status(201).json({ ok: true, simulationId: result.lastID });
+}));
 
-    db.all(participantsQuery, [id], (err, participants) => {
-      if (err) return res.status(500).json({ ok: false, error: err.message });
-      res.json({ ok: true, simulation, participants });
-    });
-  });
-});
+router.put('/:id', asyncHandler(async (req, res) => {
+  const simulation = await get(db, 'SELECT * FROM simulations WHERE id = ?', [req.params.id]);
+  if (!simulation) throw httpError(404, 'Simulación no encontrada.');
+  if (simulation.status !== 'draft') throw httpError(409, 'Solo se edita una simulación en borrador.');
+  await run(
+    db,
+    `UPDATE simulations SET name = ?, description = ?, planned_duration_minutes = ?,
+     updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    [
+      String(req.body.name || simulation.name).trim(),
+      req.body.description ?? simulation.description,
+      Number(req.body.planned_duration_minutes || simulation.planned_duration_minutes),
+      simulation.id
+    ]
+  );
+  res.json({ ok: true, message: 'Simulación actualizada.' });
+}));
 
-/**
- * POST /api/simulations
- * Create a new simulation in draft state
- */
-router.post('/', (req, res) => {
-  const { laboratory_id, name, description, planned_duration_minutes } = req.body;
-  
-  if (!laboratory_id || !name) {
-    return res.status(400).json({ ok: false, error: 'Laboratorio y nombre requeridos.' });
+router.patch('/:id/status', asyncHandler(async (req, res) => {
+  const target = req.body.status;
+  const simulation = await get(db, 'SELECT * FROM simulations WHERE id = ?', [req.params.id]);
+  if (!simulation) throw httpError(404, 'Simulación no encontrada.');
+  if (!canTransition(simulation.status, target)) {
+    throw httpError(409, `No se permite cambiar de ${simulation.status} a ${target}.`);
   }
 
-  const query = `
-    INSERT INTO simulations (laboratory_id, name, description, planned_duration_minutes, created_by_user_id, status) 
-    VALUES (?, ?, ?, ?, ?, 'draft')
-  `;
-  
-  db.run(query, [laboratory_id, name, description, planned_duration_minutes, req.user.id], function(err) {
-    if (err) return res.status(500).json({ ok: false, error: err.message });
-    res.status(201).json({ ok: true, simulationId: this.lastID });
-  });
-});
-
-/**
- * PUT /api/simulations/:id
- * Update basic simulation data (only if draft)
- */
-router.put('/:id', (req, res) => {
-  const { name, description, planned_duration_minutes, status } = req.body;
-  
-  db.get("SELECT status FROM simulations WHERE id = ?", [req.params.id], (err, sim) => {
-    if (err) return res.status(500).json({ ok: false, error: err.message });
-    if (!sim) return res.status(404).json({ ok: false, error: 'Simulación no encontrada.' });
-    if (sim.status !== 'draft') {
-      return res.status(400).json({ ok: false, error: 'Solo se pueden editar simulaciones en estado borrador.' });
-    }
-
-    const query = `
-      UPDATE simulations 
-      SET name = ?, description = ?, planned_duration_minutes = ?, status = ?, updated_at = CURRENT_TIMESTAMP 
-      WHERE id = ?
-    `;
-    db.run(query, [name, description, planned_duration_minutes, status || 'draft', req.params.id], function(err) {
-      if (err) return res.status(500).json({ ok: false, error: err.message });
-      res.json({ ok: true, message: 'Simulación actualizada.' });
-    });
-  });
-});
-
-/**
- * PATCH /api/simulations/:id/status
- * Change simulation status
- */
-router.patch('/:id/status', (req, res) => {
-  const { status } = req.body;
-  if (!['draft', 'cancelled'].includes(status)) {
-    return res.status(400).json({ ok: false, error: 'Estado no permitido en esta etapa.' });
+  if (target === 'ready') await validateReady(simulation.id);
+  if (target === 'running' && simulation.status === 'ready') await validateReady(simulation.id);
+  if (target === 'completed') {
+    const pending = await get(
+      db,
+      `SELECT COUNT(*) AS total FROM production_tickets t
+       JOIN production_orders o ON o.id = t.order_id
+       WHERE o.simulation_id = ? AND t.status != 'completed'`,
+      [simulation.id]
+    );
+    if (pending.total > 0) throw httpError(409, 'Todavía existen tickets sin completar.');
   }
 
-  const query = "UPDATE simulations SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?";
-  db.run(query, [status, req.params.id], function(err) {
-    if (err) return res.status(500).json({ ok: false, error: err.message });
-    res.json({ ok: true, message: `Simulación ${status === 'cancelled' ? 'cancelada' : 'actualizada'}.` });
-  });
-});
+  await transaction(db, async () => {
+    const timestamps = target === 'running'
+      ? "starts_at = COALESCE(starts_at, CURRENT_TIMESTAMP), ends_at = NULL,"
+      : ['completed', 'cancelled'].includes(target)
+        ? 'ends_at = CURRENT_TIMESTAMP,'
+        : '';
+    await run(
+      db,
+      `UPDATE simulations SET status = ?, ${timestamps} updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [target, simulation.id]
+    );
 
-/**
- * POST /api/simulations/:id/participants
- * Add or update a participant
- */
-router.post('/:id/participants', (req, res) => {
-  const { user_id, simulation_role, line_id, station_id } = req.body;
-  const simulation_id = req.params.id;
-
-  if (!user_id || !simulation_role) {
-    return res.status(400).json({ ok: false, error: 'Usuario y rol requeridos.' });
-  }
-
-  // Validate simulation state
-  db.get("SELECT status FROM simulations WHERE id = ?", [simulation_id], (err, sim) => {
-    if (err || !sim) return res.status(404).json({ ok: false, error: 'Simulación no encontrada.' });
-    if (sim.status !== 'draft') return res.status(400).json({ ok: false, error: 'No se pueden modificar participantes en este estado.' });
-
-    // Validate station exclusivity for operators
-    if (simulation_role === 'operator' && station_id) {
-      const checkStation = "SELECT id FROM simulation_participants WHERE simulation_id = ? AND station_id = ? AND user_id != ?";
-      db.get(checkStation, [simulation_id, station_id, user_id], (err, row) => {
-        if (err) return res.status(500).json({ ok: false, error: err.message });
-        if (row) return res.status(400).json({ ok: false, error: 'Esta estación ya tiene un operador asignado.' });
-        
-        upsertParticipant();
-      });
-    } else {
-      upsertParticipant();
+    if (target === 'running') {
+      await run(
+        db,
+        `UPDATE production_orders SET status = 'released',
+         released_at = COALESCE(released_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP
+         WHERE simulation_id = ? AND status = 'draft'`,
+        [simulation.id]
+      );
+      await run(
+        db,
+        `UPDATE production_tickets SET status = 'available', updated_at = CURRENT_TIMESTAMP
+         WHERE order_id IN (SELECT id FROM production_orders WHERE simulation_id = ?)
+           AND status = 'waiting'`,
+        [simulation.id]
+      );
     }
   });
 
-  function upsertParticipant() {
-    // Check if participant already exists in this simulation
-    db.get("SELECT id FROM simulation_participants WHERE simulation_id = ? AND user_id = ?", [simulation_id, user_id], (err, row) => {
-      if (err) return res.status(500).json({ ok: false, error: err.message });
-      
-      if (row) {
-        // Update
-        const query = `
-          UPDATE simulation_participants 
-          SET simulation_role = ?, line_id = ?, station_id = ?, updated_at = CURRENT_TIMESTAMP 
-          WHERE id = ?
-        `;
-        db.run(query, [simulation_role, line_id || null, station_id || null, row.id], function(err) {
-          if (err) return res.status(500).json({ ok: false, error: err.message });
-          res.json({ ok: true, message: 'Participante actualizado.' });
-        });
-      } else {
-        // Insert
-        const query = `
-          INSERT INTO simulation_participants (simulation_id, user_id, simulation_role, line_id, station_id) 
-          VALUES (?, ?, ?, ?, ?)
-        `;
-        db.run(query, [simulation_id, user_id, simulation_role, line_id || null, station_id || null], function(err) {
-          if (err) return res.status(500).json({ ok: false, error: err.message });
-          res.status(201).json({ ok: true, participantId: this.lastID });
-        });
-      }
-    });
-  }
-});
-
-/**
- * DELETE /api/simulations/:id/participants/:participantId
- * Remove a participant from a draft simulation
- */
-router.delete('/:id/participants/:participantId', (req, res) => {
-  const simulation_id = req.params.id;
-  const participant_id = req.params.participantId;
-
-  db.get("SELECT status FROM simulations WHERE id = ?", [simulation_id], (err, sim) => {
-    if (err || !sim) return res.status(404).json({ ok: false, error: 'Simulación no encontrada.' });
-    if (sim.status !== 'draft') return res.status(400).json({ ok: false, error: 'No se pueden quitar participantes en este estado.' });
-
-    db.run("DELETE FROM simulation_participants WHERE id = ? AND simulation_id = ?", [participant_id, simulation_id], function(err) {
-      if (err) return res.status(500).json({ ok: false, error: err.message });
-      if (this.changes === 0) return res.status(404).json({ ok: false, error: 'Participante no encontrado.' });
-      res.json({ ok: true, message: 'Participante removido.' });
-    });
+  req.app.get('io')?.to(`simulation:${simulation.id}`).emit('simulation:status', {
+    simulationId: simulation.id,
+    status: target
   });
-});
+  res.json({ ok: true, message: `Simulación actualizada a ${target}.` });
+}));
+
+router.post('/:id/participants', asyncHandler(async (req, res) => {
+  const simulation = await get(db, 'SELECT * FROM simulations WHERE id = ?', [req.params.id]);
+  if (!simulation) throw httpError(404, 'Simulación no encontrada.');
+  if (simulation.status !== 'draft') throw httpError(409, 'Solo se asignan participantes en borrador.');
+
+  const role = req.body.simulation_role;
+  if (!['operator', 'supervisor', 'observer', 'manager'].includes(role)) {
+    throw httpError(400, 'Rol inválido.');
+  }
+  const user = await get(db, "SELECT id FROM users WHERE id = ? AND user_type = 'student' AND is_active = 1", [req.body.user_id]);
+  if (!user) throw httpError(400, 'Alumno inválido o inactivo.');
+
+  let lineId = req.body.line_id || null;
+  let stationId = req.body.station_id || null;
+  if (role === 'operator') {
+    const station = await get(
+      db,
+      `SELECT st.id, st.line_id
+       FROM stations st JOIN production_lines pl ON pl.id = st.line_id
+       WHERE st.id = ? AND st.is_active = 1 AND pl.laboratory_id = ?`,
+      [stationId, simulation.laboratory_id]
+    );
+    if (!station) throw httpError(400, 'Estación inválida para el laboratorio.');
+    lineId = station.line_id;
+  } else if (role === 'supervisor') {
+    const line = await get(
+      db,
+      'SELECT id FROM production_lines WHERE id = ? AND laboratory_id = ? AND is_active = 1',
+      [lineId, simulation.laboratory_id]
+    );
+    if (!line) throw httpError(400, 'Línea inválida para el laboratorio.');
+    stationId = null;
+  } else {
+    lineId = null;
+    stationId = null;
+  }
+
+  await run(
+    db,
+    `INSERT INTO simulation_participants
+      (simulation_id, user_id, simulation_role, line_id, station_id)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(simulation_id, user_id) DO UPDATE SET
+       simulation_role = excluded.simulation_role,
+       line_id = excluded.line_id,
+       station_id = excluded.station_id,
+       updated_at = CURRENT_TIMESTAMP`,
+    [simulation.id, user.id, role, lineId, stationId]
+  );
+  res.status(201).json({ ok: true, message: 'Participante asignado.' });
+}));
+
+router.delete('/:id/participants/:participantId', asyncHandler(async (req, res) => {
+  const simulation = await get(db, 'SELECT status FROM simulations WHERE id = ?', [req.params.id]);
+  if (!simulation) throw httpError(404, 'Simulación no encontrada.');
+  if (simulation.status !== 'draft') throw httpError(409, 'Solo se quitan participantes en borrador.');
+  const result = await run(
+    db,
+    'DELETE FROM simulation_participants WHERE id = ? AND simulation_id = ?',
+    [req.params.participantId, req.params.id]
+  );
+  if (!result.changes) throw httpError(404, 'Participante no encontrado.');
+  res.json({ ok: true, message: 'Participante eliminado.' });
+}));
+
+async function validateReady(simulationId) {
+  const operators = await get(
+    db,
+    `SELECT COUNT(*) AS total FROM simulation_participants
+     WHERE simulation_id = ? AND simulation_role = 'operator' AND station_id IS NOT NULL`,
+    [simulationId]
+  );
+  if (operators.total < 1) throw httpError(409, 'Asigna al menos un operador con estación.');
+
+  const orders = await get(db, 'SELECT COUNT(*) AS total FROM production_orders WHERE simulation_id = ?', [simulationId]);
+  if (orders.total < 1) throw httpError(409, 'Crea al menos una orden.');
+
+  const withoutTickets = await get(
+    db,
+    `SELECT COUNT(*) AS total FROM production_orders o
+     WHERE o.simulation_id = ?
+       AND NOT EXISTS (SELECT 1 FROM production_tickets t WHERE t.order_id = o.id)`,
+    [simulationId]
+  );
+  if (withoutTickets.total > 0) throw httpError(409, 'Todas las órdenes deben tener tickets.');
+}
 
 module.exports = router;

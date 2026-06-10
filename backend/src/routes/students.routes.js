@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const db = require('../database/connection');
 const authMiddleware = require('../middleware/authMiddleware');
 const { requireProfessor } = require('../middleware/roleMiddleware');
@@ -73,7 +74,7 @@ router.post('/', async (req, res) => {
   }
 
   // Generate a simple random password if none provided
-  const passwordToHash = temporary_password || Math.random().toString(36).slice(-8);
+  const passwordToHash = temporary_password || crypto.randomBytes(9).toString('base64url');
   
   try {
     const passwordHash = await bcrypt.hash(passwordToHash, 10);
@@ -178,7 +179,7 @@ router.post('/:id/reset-password', async (req, res) => {
   const { id } = req.params;
   const { temporary_password } = req.body;
 
-  const newPassword = temporary_password || Math.random().toString(36).slice(-8);
+  const newPassword = temporary_password || crypto.randomBytes(9).toString('base64url');
 
   try {
     const passwordHash = await bcrypt.hash(newPassword, 10);

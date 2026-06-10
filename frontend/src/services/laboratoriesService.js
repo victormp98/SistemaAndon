@@ -10,16 +10,10 @@ const laboratoriesService = {
     return apiClient.post('/laboratories', data, authService.getToken());
   },
   async updateLaboratory(id, data) {
-    const token = authService.getToken();
-    const response = await fetch(`http://localhost:3000/api/laboratories/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify(data)
-    });
-    return response.json();
+    return apiClient.put(`/laboratories/${id}`, data, authService.getToken());
   },
   async setLaboratoryStatus(id, isActive) {
-    return apiClient.post(`/laboratories/${id}/status`, { is_active: isActive }, authService.getToken());
+    return apiClient.patch(`/laboratories/${id}/status`, { is_active: isActive }, authService.getToken());
   },
 
   // Lines
@@ -30,13 +24,7 @@ const laboratoriesService = {
     return apiClient.post(`/laboratories/${labId}/lines`, data, authService.getToken());
   },
   async updateLine(id, data) {
-    const token = authService.getToken();
-    const response = await fetch(`http://localhost:3000/api/laboratories/lines/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify(data)
-    });
-    return response.json();
+    return apiClient.put(`/laboratories/lines/${id}`, data, authService.getToken());
   },
 
   // Stations
@@ -47,13 +35,7 @@ const laboratoriesService = {
     return apiClient.post(`/laboratories/lines/${lineId}/stations`, data, authService.getToken());
   },
   async updateStation(id, data) {
-    const token = authService.getToken();
-    const response = await fetch(`http://localhost:3000/api/laboratories/stations/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify(data)
-    });
-    return response.json();
+    return apiClient.put(`/laboratories/stations/${id}`, data, authService.getToken());
   }
 };
 

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import io from 'socket.io-client';
+import authService from '../services/authService';
 
 const ServerStatus = () => {
   const [apiStatus, setApiStatus] = useState('Checking...');
@@ -8,10 +9,10 @@ const ServerStatus = () => {
   useEffect(() => {
     const checkHealth = async () => {
       try {
-        const response = await fetch('http://localhost:3000/api/health');
+        const response = await fetch('/api/health');
         const data = await response.json();
         setApiStatus(data.ok ? 'Online' : 'Error');
-      } catch (error) {
+      } catch {
         setApiStatus('Offline');
       }
     };
@@ -19,7 +20,7 @@ const ServerStatus = () => {
     checkHealth();
     const interval = setInterval(checkHealth, 30000);
 
-    const socket = io('http://localhost:3000');
+    const socket = io({ auth: { token: authService.getToken() } });
     socket.on('connect', () => setSocketStatus('Connected'));
     socket.on('disconnect', () => setSocketStatus('Disconnected'));
 

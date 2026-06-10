@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import operatorService from '../services/operatorService';
 import { io } from 'socket.io-client';
+import authService from '../services/authService';
+import incidentsService from '../services/incidentsService';
 
 const PRIORITY_LABELS = { low: 'Baja', medium: 'Media', high: 'Alta', urgent: 'Urgente' };
 const PRIORITY_COLORS = { low: 'muted', medium: 'info', high: 'warning', urgent: 'error' };
@@ -42,8 +44,8 @@ const StudentHomePage = ({ user }) => {
     loadData();
 
     // Configurar Socket.IO
-    const socket = io('http://localhost:3000');
-    socket.on('ticket:updated', (data) => {
+    const socket = io({ auth: { token: authService.getToken() } });
+    socket.on('ticket:updated', () => {
       // Refresh tickets if the update concerns this station
       loadData();
     });
@@ -70,7 +72,7 @@ const StudentHomePage = ({ user }) => {
         setError(res.error || 'Error al iniciar ticket.');
         setTimeout(() => setError(''), 4000);
       }
-    } catch (e) {
+    } catch {
       setError('Error de conexión.');
       setTimeout(() => setError(''), 4000);
     }
@@ -89,12 +91,39 @@ const StudentHomePage = ({ user }) => {
         setError(res.error || 'Error al completar ticket.');
         setTimeout(() => setError(''), 4000);
       }
-    } catch (e) {
+    } catch {
       setError('Error de conexión.');
       setTimeout(() => setError(''), 4000);
     } finally {
       setCompleting(false);
     }
+  };
+
+  const reportIncident = async () => {
+    const description = window.prompt('Describe el incidente:');
+    if (!description) return;
+    const result = await incidentsService.create({
+      simulation_id: context.simulation_id,
+      line_id: context.line_id,
+      station_id: context.station_id,
+      ticket_id: currentTicket?.id,
+      type: 'other',
+      severity: 'medium',
+      description
+    });
+    setSuccessMsg(result.ok ? 'Incidente reportado.' : result.error);
+  };
+
+  const reportDowntime = async () => {
+    const reason = window.prompt('Motivo del paro:');
+    if (!reason) return;
+    const result = await incidentsService.createDowntime({
+      simulation_id: context.simulation_id,
+      station_id: context.station_id,
+      ticket_id: currentTicket?.id,
+      reason
+    });
+    setSuccessMsg(result.ok ? 'Paro reportado.' : result.error);
   };
 
   if (loading) return <div className="loading-screen">Cargando contexto...</div>;
@@ -120,6 +149,11 @@ const StudentHomePage = ({ user }) => {
         </div>
         <div className="status-badge success">Conectado a Estación</div>
       </header>
+
+      <div className="page-header-actions">
+        <button className="btn-secondary" onClick={reportIncident}>Reportar incidente</button>
+        <button className="btn-outline btn-warn-outline" onClick={reportDowntime}>Reportar paro</button>
+      </div>
 
       {error && <div className="alert error">{error}</div>}
       {successMsg && <div className="alert success">{successMsg}</div>}

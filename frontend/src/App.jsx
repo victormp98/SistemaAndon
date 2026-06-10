@@ -17,6 +17,8 @@ import ReportsPage from './pages/ReportsPage';
 import SettingsPage from './pages/SettingsPage';
 import StudentHomePage from './pages/StudentHomePage';
 import AndonPage from './pages/AndonPage';
+import IncidentsPage from './pages/IncidentsPage';
+import ChangePasswordPage from './pages/ChangePasswordPage';
 
 // Styles
 import './styles/global.css';
@@ -58,6 +60,14 @@ function App() {
     return <div className="loading-screen">Cargando Sistema...</div>;
   }
 
+  if (user?.must_change_password) {
+    return (
+      <ChangePasswordPage
+        onChanged={() => setUser({ ...user, must_change_password: 0 })}
+      />
+    );
+  }
+
   return (
     <Router>
       <Routes>
@@ -79,6 +89,7 @@ function App() {
           <Route path="simulaciones" element={<SimulationsPage />} />
           <Route path="ordenes" element={<OrdersPage />} />
           <Route path="reportes" element={<ReportsPage />} />
+          <Route path="incidentes" element={<IncidentsPage />} />
           <Route path="configuracion" element={<SettingsPage />} />
         </Route>
 

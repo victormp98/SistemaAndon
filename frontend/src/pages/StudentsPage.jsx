@@ -205,24 +205,24 @@ const StudentsPage = () => {
               {students.length > 0 ? (
                 students.map(student => (
                   <tr key={student.id}>
-                    <td><code>{student.student_code || '---'}</code></td>
-                    <td><strong>{student.name}</strong></td>
-                    <td>{student.username}</td>
-                    <td>{student.email}</td>
-                    <td>{student.group_name || '---'}</td>
-                    <td>
+                    <td data-label="Matrícula"><code>{student.student_code || '---'}</code></td>
+                    <td data-label="Nombre"><strong>{student.name}</strong></td>
+                    <td data-label="Usuario">{student.username}</td>
+                    <td data-label="Correo">{student.email}</td>
+                    <td data-label="Grupo">{student.group_name || '---'}</td>
+                    <td data-label="Estado">
                       <span className={`status-pill-small ${student.is_active ? 'success' : 'error'}`}>
                         {student.is_active ? 'Activo' : 'Inactivo'}
                       </span>
                     </td>
-                    <td>
+                    <td data-label="Password">
                       {student.must_change_password ? (
                         <span className="badge-warning">Cambio Req.</span>
                       ) : (
                         <span className="badge-success">OK</span>
                       )}
                     </td>
-                    <td>
+                    <td data-label="Acciones">
                       <div className="action-buttons">
                         <button className="btn-icon" title="Editar" onClick={() => handleOpenEdit(student)}>✏️</button>
                         <button className="btn-icon" title="Reset Password" onClick={() => handleResetPassword(student)}>🔑</button>

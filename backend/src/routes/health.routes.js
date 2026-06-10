@@ -8,8 +8,8 @@ router.get('/health', (req, res) => {
   // Since sqlite3 doesn't have an easy "isConnected" property, 
   // we assume it's connected if the object exists and we can run a simple query.
   db.get('SELECT 1', [], (err) => {
-    res.status(200).json({
-      ok: true,
+    res.status(err ? 503 : 200).json({
+      ok: !err,
       service: config.app.name + " API",
       mode: config.app.mode,
       database: err ? "error" : "connected"

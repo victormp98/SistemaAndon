@@ -1,9 +1,14 @@
 import ServerStatus from './ServerStatus';
 
-const Topbar = ({ user, onLogout }) => {
+const Topbar = ({ user, onLogout, onMenuToggle }) => {
   return (
     <header className="topbar">
       <div className="topbar-left">
+        <button className="menu-toggle" onClick={onMenuToggle} aria-label="Abrir menú">
+          <span />
+          <span />
+          <span />
+        </button>
         <h2 className="app-title-mini">Laboratorio Industrial</h2>
       </div>
       

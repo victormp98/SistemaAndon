@@ -24,7 +24,7 @@ const OrdersPage = () => {
   // Load draft simulations on mount
   useEffect(() => {
     simulationsService.getSimulations().then(res => {
-      if (res.ok) setSimulations(res.simulations.filter(s => s.status === 'draft'));
+      if (res.ok) setSimulations(res.simulations.filter(s => ['draft', 'ready'].includes(s.status)));
     });
   }, []);
 
@@ -116,7 +116,7 @@ const OrdersPage = () => {
 
       {/* Simulation Selector */}
       <div className="sim-selector card">
-        <label>Simulación en borrador:</label>
+        <label>Simulación configurable:</label>
         <select value={selectedSimId} onChange={e => { setSelectedSimId(e.target.value); setSelectedOrder(null); setTickets([]); }}>
           <option value="">Selecciona una simulación...</option>
           {simulations.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -204,14 +204,14 @@ const OrdersPage = () => {
                         <tbody>
                           {tickets.map(t => (
                             <tr key={t.id}>
-                              <td><code>{t.code}</code></td>
-                              <td>{t.station_name || '—'}</td>
-                              <td>
+                              <td data-label="Código"><code>{t.code}</code></td>
+                              <td data-label="Estación">{t.station_name || '—'}</td>
+                              <td data-label="Estado">
                                 <span className={`status-pill-small ${t.status === 'available' ? 'success' : ''}`}>
                                   {t.status}
                                 </span>
                               </td>
-                              <td>
+                              <td data-label="Prioridad">
                                 <span className={`priority-tag ${PRIORITY_COLORS[t.priority]}`}>
                                   {PRIORITY_LABELS[t.priority]}
                                 </span>
