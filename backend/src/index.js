@@ -1,20 +1,32 @@
 const http = require('http');
+const https = require('https');
+const fs = require('fs');
+const os = require('os');
 const config = require('./config/appConfig');
 const db = require('./database/connection');
 const createApp = require('./app');
 const setupSockets = require('./sockets/socketServer');
 const { ensureDailyBackup } = require('./services/backupService');
+const settingsService = require('./services/settingsService');
 
 async function start() {
   await db.ready;
-  await ensureDailyBackup();
+  await ensureDailyBackup(await settingsService.getValue('backup_retention'));
   const app = createApp();
-  const server = http.createServer(app);
+  const server = config.tls.enabled
+    ? https.createServer({
+      key: fs.readFileSync(config.tls.keyPath),
+      cert: fs.readFileSync(config.tls.certPath)
+    }, app)
+    : http.createServer(app);
   const io = setupSockets(server);
   app.set('io', io);
 
   server.listen(config.server.port, config.server.host, () => {
-    console.log(`${config.app.name} running at http://localhost:${config.server.port}`);
+    const protocol = config.tls.enabled ? 'https' : 'http';
+    console.log(`${config.app.name} running at ${protocol}://localhost:${config.server.port}`);
+    Object.values(os.networkInterfaces()).flat().filter((item) => item?.family === 'IPv4' && !item.internal)
+      .forEach((item) => console.log(`LAN: ${protocol}://${item.address}:${config.server.port}`));
   });
 
   const shutdown = () => {

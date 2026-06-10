@@ -7,8 +7,21 @@ const { run } = require('./dbUtils');
 
 const dbPath = path.resolve(__dirname, '../../../', config.database.path);
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+applyPendingRestore();
 
 const db = new sqlite3.Database(dbPath);
+
+function applyPendingRestore() {
+  const pendingPath = `${dbPath}.restore-pending`;
+  const markerPath = `${dbPath}.restore.json`;
+  if (!fs.existsSync(pendingPath)) return;
+  fs.copyFileSync(pendingPath, dbPath);
+  fs.rmSync(pendingPath);
+  if (fs.existsSync(markerPath)) fs.rmSync(markerPath);
+  for (const suffix of ['-wal', '-shm']) {
+    if (fs.existsSync(`${dbPath}${suffix}`)) fs.rmSync(`${dbPath}${suffix}`);
+  }
+}
 
 const ready = (async () => {
   await run(db, 'PRAGMA foreign_keys = ON');

@@ -15,10 +15,15 @@ import SimulationsPage from './pages/SimulationsPage';
 import OrdersPage from './pages/OrdersPage';
 import ReportsPage from './pages/ReportsPage';
 import SettingsPage from './pages/SettingsPage';
-import StudentHomePage from './pages/StudentHomePage';
 import AndonPage from './pages/AndonPage';
 import IncidentsPage from './pages/IncidentsPage';
 import ChangePasswordPage from './pages/ChangePasswordPage';
+import ProfessorsPage from './pages/ProfessorsPage';
+import AuditPage from './pages/AuditPage';
+import ParticipantHomePage from './pages/ParticipantHomePage';
+import SimulationDashboardPage from './pages/SimulationDashboardPage';
+import SimulationReportPage from './pages/SimulationReportPage';
+import SimulationEventsPage from './pages/SimulationEventsPage';
 
 // Styles
 import './styles/global.css';
@@ -62,9 +67,9 @@ function App() {
 
   if (user?.must_change_password) {
     return (
-      <ChangePasswordPage
+      <Router><Routes><Route path="*" element={<ChangePasswordPage
         onChanged={() => setUser({ ...user, must_change_password: 0 })}
-      />
+      />} /></Routes></Router>
     );
   }
 
@@ -87,10 +92,17 @@ function App() {
           <Route path="laboratorios" element={<LaboratoriesPage />} />
           <Route path="alumnos" element={<StudentsPage />} />
           <Route path="simulaciones" element={<SimulationsPage />} />
+          <Route path="simulaciones/:id/dashboard" element={<SimulationDashboardPage />} />
+          <Route path="simulaciones/:id/reporte" element={<SimulationReportPage />} />
+          <Route path="simulaciones/:id/eventos" element={<SimulationEventsPage />} />
+          <Route path="simulaciones/:id/incidentes" element={<IncidentsPage />} />
           <Route path="ordenes" element={<OrdersPage />} />
           <Route path="reportes" element={<ReportsPage />} />
           <Route path="incidentes" element={<IncidentsPage />} />
           <Route path="configuracion" element={<SettingsPage />} />
+          <Route path="respaldos" element={<SettingsPage />} />
+          <Route path="profesores" element={user?.is_admin ? <ProfessorsPage /> : <Navigate to="/profesor" replace />} />
+          <Route path="auditoria" element={<AuditPage />} />
         </Route>
 
         {/* Protected Student Routes */}
@@ -102,7 +114,11 @@ function App() {
             </ProtectedRoute>
           }
         >
-          <Route index element={<StudentHomePage />} />
+          <Route index element={<ParticipantHomePage user={user} />} />
+          <Route path="simulaciones/:id/dashboard" element={<SimulationDashboardPage />} />
+          <Route path="simulaciones/:id/reporte" element={<SimulationReportPage />} />
+          <Route path="simulaciones/:id/eventos" element={<SimulationEventsPage />} />
+          <Route path="simulaciones/:id/incidentes" element={<IncidentsPage />} />
         </Route>
 
         {/* Semi-public Andon (Requires any authenticated user) */}
@@ -115,7 +131,10 @@ function App() {
           }
         >
           <Route index element={<AndonPage />} />
+          <Route path="simulaciones/:id" element={<AndonPage />} />
         </Route>
+
+        <Route path="/cambiar-password" element={user ? <ChangePasswordPage onChanged={() => setUser({ ...user, must_change_password: 0 })} /> : <Navigate to="/login" replace />} />
 
         {/* Fallback */}
         <Route path="/" element={<Navigate to={user ? (user.user_type === 'professor' ? '/profesor' : '/alumno') : '/login'} replace />} />

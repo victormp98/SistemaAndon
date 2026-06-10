@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import analyticsService from '../services/analyticsService';
+import { Link } from 'react-router-dom';
 
 export default function ReportsPage() {
   const [reports, setReports] = useState([]);
@@ -19,8 +20,8 @@ export default function ReportsPage() {
   return (
     <div>
       <header className="page-header-actions"><div><h1>Reportes</h1><p className="subtitle">Resultados consolidados por simulación.</p></div><button className="btn-primary" onClick={exportCsv}>Exportar CSV</button></header>
-      <div className="card table-container"><table className="data-table"><thead><tr><th>Simulación</th><th>Estado</th><th>Tickets</th><th>Completados</th><th>Ciclo prom.</th><th>Incidentes</th><th>Paros</th></tr></thead>
-        <tbody>{reports.map((r) => <tr key={r.id}><td data-label="Simulación">{r.name}</td><td data-label="Estado">{r.status}</td><td data-label="Tickets">{r.tickets}</td><td data-label="Completados">{r.completed}</td><td data-label="Ciclo promedio">{r.avg_cycle_seconds || '-'} s</td><td data-label="Incidentes">{r.incidents}</td><td data-label="Paros">{r.downtimes}</td></tr>)}</tbody>
+      <div className="card table-container"><table className="data-table"><thead><tr><th>Simulación</th><th>Estado</th><th>Tickets</th><th>Completados</th><th>Ciclo prom.</th><th>Incidentes</th><th>Paros</th><th>Detalle</th></tr></thead>
+        <tbody>{reports.map((r) => <tr key={r.id}><td data-label="Simulación">{r.name}</td><td data-label="Estado">{r.status}</td><td data-label="Tickets">{r.tickets}</td><td data-label="Completados">{r.completed}</td><td data-label="Ciclo promedio">{r.avg_cycle_seconds || '-'} s</td><td data-label="Incidentes">{r.incidents}</td><td data-label="Paros">{r.downtimes}</td><td data-label="Detalle"><Link className="btn-secondary link-button" to={`/profesor/simulaciones/${r.id}/reporte`}>Abrir</Link></td></tr>)}</tbody>
       </table></div>
     </div>
   );

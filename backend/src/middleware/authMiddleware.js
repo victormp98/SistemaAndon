@@ -18,8 +18,12 @@ module.exports = (req, res, next) => {
     const decoded = jwt.verify(token, config.auth.jwtSecret);
 
     // Verify user in DB
-    const query = "SELECT id, name, username, email, user_type, is_active, must_change_password FROM users WHERE id = ? AND is_active = 1";
-    db.get(query, [decoded.id], (err, user) => {
+    const query = `SELECT u.id, u.name, u.username, u.email, u.user_type, u.is_admin,
+      u.owner_user_id, u.is_active, u.must_change_password
+      FROM users u JOIN auth_sessions s ON s.id = ?
+      WHERE u.id = ? AND u.is_active = 1 AND s.user_id = u.id
+        AND s.revoked_at IS NULL AND s.expires_at > CURRENT_TIMESTAMP`;
+    db.get(query, [decoded.jti, decoded.id], (err, user) => {
       if (err || !user) {
         return res.status(401).json({ 
           ok: false, 
@@ -28,6 +32,8 @@ module.exports = (req, res, next) => {
       }
 
       req.user = user;
+      req.sessionId = decoded.jti;
+      db.run('UPDATE auth_sessions SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ?', [decoded.jti]);
       if (user.must_change_password && !['/change-password', '/me'].includes(req.path)) {
         return res.status(403).json({
           ok: false,

@@ -9,7 +9,7 @@ const MainLayout = ({ user, onLogout }) => {
   return (
     <div className="main-layout">
       <Sidebar
-        userType={user?.user_type}
+        user={user}
         isOpen={menuOpen}
         onNavigate={() => setMenuOpen(false)}
       />

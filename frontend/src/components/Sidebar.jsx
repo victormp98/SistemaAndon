@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 
-const Sidebar = ({ userType, isOpen, onNavigate }) => {
+const Sidebar = ({ user, isOpen, onNavigate }) => {
   const professorLinks = [
     { to: '/profesor', label: 'Inicio', icon: '🏠' },
     { to: '/profesor/laboratorios', label: 'Laboratorios', icon: '🧪' },
@@ -11,14 +11,17 @@ const Sidebar = ({ userType, isOpen, onNavigate }) => {
     { to: '/profesor/incidentes', label: 'Incidentes', icon: '!' },
     { to: '/andon', label: 'Panel Andon', icon: '🔔' },
     { to: '/profesor/configuracion', label: 'Configuración', icon: '⚙️' },
+    { to: '/profesor/respaldos', label: 'Respaldos', icon: 'R' },
+    { to: '/profesor/auditoria', label: 'Auditoría', icon: 'A' },
   ];
+  if (user?.is_admin) professorLinks.splice(3, 0, { to: '/profesor/profesores', label: 'Profesores', icon: 'P' });
 
   const studentLinks = [
     { to: '/alumno', label: 'Inicio', icon: '🏠' },
     { to: '/andon', label: 'Panel Andon', icon: '🔔' },
   ];
 
-  const links = userType === 'professor' ? professorLinks : studentLinks;
+  const links = user?.user_type === 'professor' ? professorLinks : studentLinks;
 
   return (
     <aside className={`sidebar ${isOpen ? 'open' : ''}`}>

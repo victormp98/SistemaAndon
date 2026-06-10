@@ -16,7 +16,7 @@ router.get('/status', authMiddleware, requireProfessor, (req, res) => {
     if (err) {
       return res.status(500).json({
         ok: false,
-        error: err.message,
+        error: 'No se pudo consultar el estado de la base de datos.',
         timestamp: new Date().toISOString()
       });
     }

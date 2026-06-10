@@ -1,168 +1,166 @@
 const express = require('express');
-const router = express.Router();
 const db = require('../database/connection');
+const { run, get, all } = require('../database/dbUtils');
 const authMiddleware = require('../middleware/authMiddleware');
 const { requireProfessor } = require('../middleware/roleMiddleware');
+const asyncHandler = require('../middleware/asyncHandler');
+const httpError = require('../utils/httpError');
+const { isAdmin, assertLaboratory } = require('../services/accessService');
+const auditService = require('../services/auditService');
 
-router.use(authMiddleware);
-router.use(requireProfessor);
+const router = express.Router();
+router.use(authMiddleware, requireProfessor);
 
-// --- LABORATORIES ---
+router.get('/', asyncHandler(async (req, res) => {
+  const filter = isAdmin(req.user) ? { sql: '1=1', params: [] } : { sql: 'l.created_by_user_id = ?', params: [req.user.id] };
+  const laboratories = await all(
+    db,
+    `SELECT l.*, owner.name AS owner_name,
+      (SELECT COUNT(*) FROM production_lines WHERE laboratory_id = l.id) AS line_count,
+      (SELECT COUNT(*) FROM stations st JOIN production_lines pl ON st.line_id = pl.id WHERE pl.laboratory_id = l.id) AS station_count
+     FROM laboratories l LEFT JOIN users owner ON owner.id = l.created_by_user_id
+     WHERE ${filter.sql} ORDER BY l.name`,
+    filter.params
+  );
+  res.json({ ok: true, laboratories });
+}));
 
-// GET /api/laboratories
-router.get('/', (req, res) => {
-  const query = `
-    SELECT l.*, 
-      (SELECT COUNT(*) FROM production_lines WHERE laboratory_id = l.id) as line_count,
-      (SELECT COUNT(*) FROM stations s JOIN production_lines pl ON s.line_id = pl.id WHERE pl.laboratory_id = l.id) as station_count
-    FROM laboratories l
-    ORDER BY l.name ASC
-  `;
-  db.all(query, [], (err, rows) => {
-    if (err) return res.status(500).json({ ok: false, error: err.message });
-    res.json({ ok: true, laboratories: rows });
-  });
-});
+router.post('/', asyncHandler(async (req, res) => {
+  const name = String(req.body.name || '').trim();
+  if (!name) throw httpError(400, 'Nombre de laboratorio requerido.');
+  const result = await run(
+    db,
+    'INSERT INTO laboratories (name, description, created_by_user_id) VALUES (?, ?, ?)',
+    [name, req.body.description || null, req.user.id]
+  );
+  await auditService.record({ req, action: 'laboratory.created', entityType: 'laboratory', entityId: result.lastID });
+  res.status(201).json({ ok: true, laboratory: { id: result.lastID, name, description: req.body.description, is_active: 1 } });
+}));
 
-// POST /api/laboratories
-router.post('/', (req, res) => {
-  const { name, description } = req.body;
-  if (!name) return res.status(400).json({ ok: false, error: 'Nombre de laboratorio requerido.' });
+router.put('/:id', asyncHandler(async (req, res) => {
+  const laboratory = await assertLaboratory(req.user, req.params.id);
+  const name = String(req.body.name || '').trim();
+  if (!name) throw httpError(400, 'Nombre de laboratorio requerido.');
+  await run(
+    db,
+    `UPDATE laboratories SET name = ?, description = ?, is_active = ?,
+     updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    [name, req.body.description || null, req.body.is_active ? 1 : 0, laboratory.id]
+  );
+  await auditService.record({ req, action: 'laboratory.updated', entityType: 'laboratory', entityId: laboratory.id });
+  res.json({ ok: true, message: 'Laboratorio actualizado.' });
+}));
 
-  const query = "INSERT INTO laboratories (name, description, created_by_user_id) VALUES (?, ?, ?)";
-  db.run(query, [name, description, req.user.id], function(err) {
-    if (err) return res.status(500).json({ ok: false, error: err.message });
-    res.status(201).json({ ok: true, laboratory: { id: this.lastID, name, description, is_active: 1 } });
-  });
-});
+router.patch('/:id/status', asyncHandler(async (req, res) => {
+  const laboratory = await assertLaboratory(req.user, req.params.id);
+  await run(db, 'UPDATE laboratories SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [req.body.is_active ? 1 : 0, laboratory.id]);
+  await auditService.record({ req, action: 'laboratory.status_changed', entityType: 'laboratory', entityId: laboratory.id, details: { is_active: Boolean(req.body.is_active) } });
+  res.json({ ok: true, message: 'Estado actualizado.' });
+}));
 
-// PUT /api/laboratories/:id
-router.put('/:id', (req, res) => {
-  const { name, description, is_active } = req.body;
-  const query = "UPDATE laboratories SET name = ?, description = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?";
-  db.run(query, [name, description, is_active, req.params.id], function(err) {
-    if (err) return res.status(500).json({ ok: false, error: err.message });
-    if (this.changes === 0) return res.status(404).json({ ok: false, error: 'Laboratorio no encontrado.' });
-    res.json({ ok: true, message: 'Laboratorio actualizado.' });
-  });
-});
+router.get('/:labId/lines', asyncHandler(async (req, res) => {
+  await assertLaboratory(req.user, req.params.labId);
+  const lines = await all(db, 'SELECT * FROM production_lines WHERE laboratory_id = ? ORDER BY sequence_order, name', [req.params.labId]);
+  res.json({ ok: true, lines });
+}));
 
-// PATCH /api/laboratories/:id/status
-router.patch('/:id/status', (req, res) => {
-  const { is_active } = req.body;
-  const query = "UPDATE laboratories SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?";
-  db.run(query, [is_active ? 1 : 0, req.params.id], function(err) {
-    if (err) return res.status(500).json({ ok: false, error: err.message });
-    res.json({ ok: true, message: 'Estado actualizado.' });
-  });
-});
+router.post('/:labId/lines', asyncHandler(async (req, res) => {
+  await assertLaboratory(req.user, req.params.labId);
+  const name = String(req.body.name || '').trim();
+  if (!name) throw httpError(400, 'Nombre de línea requerido.');
+  const result = await run(
+    db,
+    'INSERT INTO production_lines (laboratory_id, name, description, sequence_order) VALUES (?, ?, ?, ?)',
+    [req.params.labId, name, req.body.description || null, Number(req.body.sequence_order) || 0]
+  );
+  await auditService.record({ req, action: 'line.created', entityType: 'production_line', entityId: result.lastID });
+  res.status(201).json({ ok: true, line: { id: result.lastID, name, description: req.body.description, sequence_order: Number(req.body.sequence_order) || 0 } });
+}));
 
-// --- PRODUCTION LINES ---
+async function ownedLine(req, id) {
+  const line = await get(
+    db,
+    `SELECT pl.*, l.created_by_user_id FROM production_lines pl
+     JOIN laboratories l ON l.id = pl.laboratory_id WHERE pl.id = ?`,
+    [id]
+  );
+  if (!line) throw httpError(404, 'Línea no encontrada.');
+  if (!isAdmin(req.user) && line.created_by_user_id !== req.user.id) throw httpError(403, 'No tienes acceso a esta línea.');
+  return line;
+}
 
-// GET /api/laboratories/:labId/lines
-router.get('/:labId/lines', (req, res) => {
-  const query = "SELECT * FROM production_lines WHERE laboratory_id = ? ORDER BY sequence_order ASC, name ASC";
-  db.all(query, [req.params.labId], (err, rows) => {
-    if (err) return res.status(500).json({ ok: false, error: err.message });
-    res.json({ ok: true, lines: rows });
-  });
-});
+router.put('/lines/:id', asyncHandler(async (req, res) => {
+  const line = await ownedLine(req, req.params.id);
+  await run(
+    db,
+    `UPDATE production_lines SET name = ?, description = ?, sequence_order = ?, is_active = ?,
+     updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    [String(req.body.name || '').trim(), req.body.description || null, Number(req.body.sequence_order) || 0, req.body.is_active ? 1 : 0, line.id]
+  );
+  await auditService.record({ req, action: 'line.updated', entityType: 'production_line', entityId: line.id });
+  res.json({ ok: true, message: 'Línea actualizada.' });
+}));
 
-// POST /api/laboratories/:labId/lines
-router.post('/:labId/lines', (req, res) => {
-  const { name, description, sequence_order } = req.body;
-  if (!name) return res.status(400).json({ ok: false, error: 'Nombre de línea requerido.' });
+router.patch('/lines/:id/status', asyncHandler(async (req, res) => {
+  const line = await ownedLine(req, req.params.id);
+  await run(db, 'UPDATE production_lines SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [req.body.is_active ? 1 : 0, line.id]);
+  res.json({ ok: true, message: 'Estado de línea actualizado.' });
+}));
 
-  const query = "INSERT INTO production_lines (laboratory_id, name, description, sequence_order) VALUES (?, ?, ?, ?)";
-  db.run(query, [req.params.labId, name, description, sequence_order || 0], function(err) {
-    if (err) return res.status(500).json({ ok: false, error: err.message });
-    res.status(201).json({ ok: true, line: { id: this.lastID, name, description, sequence_order } });
-  });
-});
+router.get('/lines/:lineId/stations', asyncHandler(async (req, res) => {
+  await ownedLine(req, req.params.lineId);
+  const stations = await all(db, 'SELECT * FROM stations WHERE line_id = ? ORDER BY sequence_order, name', [req.params.lineId]);
+  res.json({ ok: true, stations });
+}));
 
-// PUT /api/lines/:id
-router.put('/lines/:id', (req, res) => {
-  const { name, description, sequence_order, is_active } = req.body;
-  const query = "UPDATE production_lines SET name = ?, description = ?, sequence_order = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?";
-  db.run(query, [name, description, sequence_order, is_active, req.params.id], function(err) {
-    if (err) return res.status(500).json({ ok: false, error: err.message });
-    res.json({ ok: true, message: 'Línea actualizada.' });
-  });
-});
+router.post('/lines/:lineId/stations', asyncHandler(async (req, res) => {
+  const line = await ownedLine(req, req.params.lineId);
+  const name = String(req.body.name || '').trim();
+  if (!name) throw httpError(400, 'Nombre de estación requerido.');
+  const result = await run(
+    db,
+    `INSERT INTO stations
+     (line_id, name, description, instructions, sequence_order, target_cycle_time_seconds, allows_defects, allows_downtime)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [line.id, name, req.body.description || null, req.body.instructions || null, Number(req.body.sequence_order) || 0,
+      Math.max(0, Number(req.body.target_cycle_time_seconds) || 0), req.body.allows_defects ? 1 : 0, req.body.allows_downtime ? 1 : 0]
+  );
+  await auditService.record({ req, action: 'station.created', entityType: 'station', entityId: result.lastID });
+  res.status(201).json({ ok: true, station: { id: result.lastID, name } });
+}));
 
-// PATCH /api/lines/:id/status
-router.patch('/lines/:id/status', (req, res) => {
-  const { is_active } = req.body;
-  const query = "UPDATE production_lines SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?";
-  db.run(query, [is_active ? 1 : 0, req.params.id], function(err) {
-    if (err) return res.status(500).json({ ok: false, error: err.message });
-    res.json({ ok: true, message: 'Estado de línea actualizado.' });
-  });
-});
+async function ownedStation(req, id) {
+  const station = await get(
+    db,
+    `SELECT st.*, l.created_by_user_id FROM stations st
+     JOIN production_lines pl ON pl.id = st.line_id
+     JOIN laboratories l ON l.id = pl.laboratory_id WHERE st.id = ?`,
+    [id]
+  );
+  if (!station) throw httpError(404, 'Estación no encontrada.');
+  if (!isAdmin(req.user) && station.created_by_user_id !== req.user.id) throw httpError(403, 'No tienes acceso a esta estación.');
+  return station;
+}
 
-// --- STATIONS ---
+router.put('/stations/:id', asyncHandler(async (req, res) => {
+  const station = await ownedStation(req, req.params.id);
+  await run(
+    db,
+    `UPDATE stations SET name = ?, description = ?, instructions = ?, sequence_order = ?,
+     target_cycle_time_seconds = ?, allows_defects = ?, allows_downtime = ?, is_active = ?,
+     updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    [String(req.body.name || '').trim(), req.body.description || null, req.body.instructions || null,
+      Number(req.body.sequence_order) || 0, Math.max(0, Number(req.body.target_cycle_time_seconds) || 0),
+      req.body.allows_defects ? 1 : 0, req.body.allows_downtime ? 1 : 0, req.body.is_active ? 1 : 0, station.id]
+  );
+  await auditService.record({ req, action: 'station.updated', entityType: 'station', entityId: station.id });
+  res.json({ ok: true, message: 'Estación actualizada.' });
+}));
 
-// GET /api/lines/:lineId/stations
-router.get('/lines/:lineId/stations', (req, res) => {
-  const query = "SELECT * FROM stations WHERE line_id = ? ORDER BY sequence_order ASC, name ASC";
-  db.all(query, [req.params.lineId], (err, rows) => {
-    if (err) return res.status(500).json({ ok: false, error: err.message });
-    res.json({ ok: true, stations: rows });
-  });
-});
-
-// POST /api/lines/:lineId/stations
-router.post('/lines/:lineId/stations', (req, res) => {
-  const { name, description, instructions, sequence_order, target_cycle_time_seconds, allows_defects, allows_downtime } = req.body;
-  if (!name) return res.status(400).json({ ok: false, error: 'Nombre de estación requerido.' });
-
-  const query = `
-    INSERT INTO stations (line_id, name, description, instructions, sequence_order, target_cycle_time_seconds, allows_defects, allows_downtime) 
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `;
-  db.run(query, [
-    req.params.lineId, 
-    name, 
-    description, 
-    instructions, 
-    sequence_order || 0, 
-    target_cycle_time_seconds || 0, 
-    allows_defects ? 1 : 0, 
-    allows_downtime ? 1 : 0
-  ], function(err) {
-    if (err) return res.status(500).json({ ok: false, error: err.message });
-    res.status(201).json({ ok: true, station: { id: this.lastID, name } });
-  });
-});
-
-// PUT /api/stations/:id
-router.put('/stations/:id', (req, res) => {
-  const { name, description, instructions, sequence_order, target_cycle_time_seconds, allows_defects, allows_downtime, is_active } = req.body;
-  const query = `
-    UPDATE stations SET 
-      name = ?, description = ?, instructions = ?, sequence_order = ?, 
-      target_cycle_time_seconds = ?, allows_defects = ?, allows_downtime = ?, 
-      is_active = ?, updated_at = CURRENT_TIMESTAMP 
-    WHERE id = ?
-  `;
-  db.run(query, [
-    name, description, instructions, sequence_order, 
-    target_cycle_time_seconds, allows_defects ? 1 : 0, allows_downtime ? 1 : 0, 
-    is_active, req.params.id
-  ], function(err) {
-    if (err) return res.status(500).json({ ok: false, error: err.message });
-    res.json({ ok: true, message: 'Estación actualizada.' });
-  });
-});
-
-// PATCH /api/stations/:id/status
-router.patch('/stations/:id/status', (req, res) => {
-  const { is_active } = req.body;
-  const query = "UPDATE stations SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?";
-  db.run(query, [is_active ? 1 : 0, req.params.id], function(err) {
-    if (err) return res.status(500).json({ ok: false, error: err.message });
-    res.json({ ok: true, message: 'Estado de estación actualizado.' });
-  });
-});
+router.patch('/stations/:id/status', asyncHandler(async (req, res) => {
+  const station = await ownedStation(req, req.params.id);
+  await run(db, 'UPDATE stations SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [req.body.is_active ? 1 : 0, station.id]);
+  res.json({ ok: true, message: 'Estado de estación actualizado.' });
+}));
 
 module.exports = router;

@@ -1,0 +1,33 @@
+SISTEMA ANDON - PRODUCTO COMPLETO LOCAL/LAN
+
+1. Abra desktop-launcher\INICIAR_SISTEMA_ANDON.cmd
+2. Seleccione "Iniciar servidor".
+3. El launcher mostrará la URL local y las URLs LAN.
+4. Para datos de práctica seleccione "Cargar/restablecer datos TEST" con el servidor detenido.
+
+USUARIOS TEST
+admin / admin123
+prof1 / prof123
+prof2 / prof123
+juanp / juanp123
+anag / anag123
+carlosm / carlos123
+mariag / mariag123
+luisr / luis123
+sofial / sofia123
+
+USO
+Admin administra profesores y configuración global.
+Profesor configura laboratorio, alumnos, simulación, órdenes y tickets.
+Alumno usa las herramientas de operator, supervisor, observer o manager asignadas.
+
+RESPALDOS
+Use Configuración o la opción del launcher.
+La restauración se confirma en Configuración y se aplica al reiniciar.
+
+CIERRE
+Seleccione "Detener servidor" en el launcher antes de apagar o retirar la USB.
+También existen INICIAR_SERVIDOR.cmd y DETENER_SERVIDOR.cmd para control directo.
+
+MANUALES
+Consulte docs\user-manual.md y docs\technical-documentation.md.

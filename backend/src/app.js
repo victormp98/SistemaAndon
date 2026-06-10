@@ -15,6 +15,9 @@ const operatorRoutes = require('./routes/operator.routes');
 const analyticsRoutes = require('./routes/analytics.routes');
 const incidentsRoutes = require('./routes/incidents.routes');
 const settingsRoutes = require('./routes/settings.routes');
+const professorsRoutes = require('./routes/professors.routes');
+const auditRoutes = require('./routes/audit.routes');
+const participantRoutes = require('./routes/participant.routes');
 const { notFoundHandler, errorHandler } = require('./middleware/errorMiddleware');
 
 function createApp() {
@@ -27,12 +30,22 @@ function createApp() {
 
   app.disable('x-powered-by');
   app.use(helmet({
-    contentSecurityPolicy: false,
+    contentSecurityPolicy: process.env.NODE_ENV === 'production' ? {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:'],
+        connectSrc: ["'self'", 'ws:', 'wss:'],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'none'"]
+      }
+    } : false,
     crossOriginResourcePolicy: { policy: 'cross-origin' }
   }));
   app.use(cors({
     origin(origin, callback) {
-      if (!origin || allowedOrigins.has(origin) || /^http:\/\/(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(origin)) {
+      if (!origin || allowedOrigins.has(origin) || /^https?:\/\/(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(origin)) {
         return callback(null, true);
       }
       callback(new Error('Origen no permitido por CORS.'));
@@ -57,6 +70,9 @@ function createApp() {
   app.use('/api/analytics', analyticsRoutes);
   app.use('/api/incidents', incidentsRoutes);
   app.use('/api/settings', settingsRoutes);
+  app.use('/api/professors', professorsRoutes);
+  app.use('/api/audit', auditRoutes);
+  app.use('/api/participant', participantRoutes);
 
   const frontendDist = path.join(__dirname, '../../frontend/dist');
   app.use(express.static(frontendDist));

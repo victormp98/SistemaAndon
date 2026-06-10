@@ -16,7 +16,6 @@
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-router-dom": "^7.15.1",
-    "sistemaandon": "file:..",
     "socket.io-client": "^4.8.3"
   },
   "devDependencies": {

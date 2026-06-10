@@ -1068,7 +1068,7 @@ textarea:focus-visible {
   .topbar-right { gap: 1rem; }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1023px) {
   .sidebar {
     width: min(82vw, 300px);
     transform: translateX(-105%);
@@ -1106,7 +1106,7 @@ textarea:focus-visible {
   .operator-layout { grid-template-columns: 1fr; }
 }
 
-@media (max-width: 700px) {
+@media (max-width: 767px) {
   h1 { font-size: clamp(1.5rem, 8vw, 2rem); }
   h2 { font-size: clamp(1.2rem, 6vw, 1.5rem); }
   .page-content { padding: 1rem; }
@@ -1223,6 +1223,59 @@ textarea:focus-visible {
     flex-wrap: wrap;
   }
   .table-container > h3 { padding: 1rem; }
+}
+
+.assignment-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.assignment-grid .card h3 { margin-bottom: 0.4rem; }
+.assignment-grid .card p { margin: 0.35rem 0; color: var(--text-muted); }
+.embedded-operator { margin-top: 2rem; padding-top: 2rem; border-top: 1px solid var(--border); }
+.link-button { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+.filter-bar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) repeat(2, minmax(140px, 220px)) auto;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+}
+.filter-bar input,
+.page-header-actions select {
+  min-height: 42px;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  background: var(--bg-dark);
+  color: var(--text-main);
+}
+.backup-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.backup-row code { overflow-wrap: anywhere; }
+.checkbox-row { display: flex; align-items: center; gap: 0.6rem; margin: 0.75rem 0; }
+.compact-empty { min-height: 180px; }
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .page-content { padding: 1.25rem; }
+  .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .assignment-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 767px) {
+  .filter-bar { grid-template-columns: 1fr; }
+  .assignment-grid { grid-template-columns: 1fr; }
+  .backup-row { align-items: stretch; flex-direction: column; }
+  .backup-row button { width: 100%; }
+  .page-header-actions .action-buttons { width: 100%; flex-direction: column; }
+  .page-header-actions .action-buttons > * { width: 100%; }
 }
 
 @media (max-width: 420px) {

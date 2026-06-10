@@ -38,6 +38,26 @@ const apiClient = {
 
   async delete(endpoint, token = null) {
     return this.request(endpoint, { method: 'DELETE', token });
+  },
+
+  async download(endpoint, token, filename) {
+    const response = await fetch(`${BASE_URL}${endpoint}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      return { ok: false, error: data.error || 'No se pudo descargar el archivo.' };
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    return { ok: true };
   }
 };
 

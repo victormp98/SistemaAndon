@@ -35,6 +35,12 @@ config.auth = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || config.auth?.jwtExpiresIn || '8h'
 };
 
+config.tls = {
+  enabled: String(process.env.HTTPS_ENABLED || '').toLowerCase() === 'true',
+  keyPath: process.env.HTTPS_KEY_PATH || '',
+  certPath: process.env.HTTPS_CERT_PATH || ''
+};
+
 if (!process.env.JWT_SECRET) {
   throw new Error('JWT_SECRET is required. Configure it in the local .env file.');
 }

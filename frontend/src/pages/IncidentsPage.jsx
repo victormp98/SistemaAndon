@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import incidentsService from '../services/incidentsService';
+import { useParams } from 'react-router-dom';
 
 export default function IncidentsPage() {
+  const { id } = useParams();
   const [data, setData] = useState({ incidents: [], downtimes: [] });
-  const load = () => incidentsService.list().then((result) => result.ok && setData(result));
-  useEffect(() => { load(); }, []);
+  const load = useCallback(() => incidentsService.list(id).then((result) => result.ok && setData(result)), [id]);
+  useEffect(() => { load(); }, [load]);
 
   return (
     <div>

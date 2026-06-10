@@ -17,4 +17,17 @@ router.get('/health', (req, res) => {
   });
 });
 
+router.get('/health/runtime', (req, res) => {
+  db.get('SELECT 1', [], (err) => {
+    res.status(err ? 503 : 200).json({
+      ok: !err,
+      service: config.app.name,
+      database: err ? 'error' : 'connected',
+      uptime_seconds: Math.round(process.uptime()),
+      websocket_clients: req.app.get('io')?.clientCount?.() || 0,
+      timestamp: new Date().toISOString()
+    });
+  });
+});
+
 module.exports = router;

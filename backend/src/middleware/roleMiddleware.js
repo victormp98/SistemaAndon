@@ -17,5 +17,12 @@ module.exports = {
       });
     }
     next();
+  },
+
+  requireAdmin: (req, res, next) => {
+    if (!req.user || req.user.user_type !== 'professor' || !req.user.is_admin) {
+      return res.status(403).json({ ok: false, error: 'Acceso exclusivo del administrador global.' });
+    }
+    next();
   }
 };

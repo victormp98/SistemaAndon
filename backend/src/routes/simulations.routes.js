@@ -6,11 +6,14 @@ const { requireProfessor } = require('../middleware/roleMiddleware');
 const asyncHandler = require('../middleware/asyncHandler');
 const httpError = require('../utils/httpError');
 const { canTransition } = require('../domain/simulationLifecycle');
+const { isAdmin, assertLaboratory, assertSimulation } = require('../services/accessService');
+const auditService = require('../services/auditService');
 
 const router = express.Router();
 router.use(authMiddleware, requireProfessor);
 
 router.get('/', asyncHandler(async (req, res) => {
+  const scope = isAdmin(req.user) ? { sql: '1=1', params: [] } : { sql: 's.created_by_user_id = ?', params: [req.user.id] };
   const simulations = await all(
     db,
     `SELECT s.*, l.name AS laboratory_name,
@@ -18,12 +21,15 @@ router.get('/', asyncHandler(async (req, res) => {
        (SELECT COUNT(*) FROM production_orders WHERE simulation_id = s.id) AS order_count
      FROM simulations s
      JOIN laboratories l ON l.id = s.laboratory_id
+     WHERE ${scope.sql}
      ORDER BY s.created_at DESC`
+    , scope.params
   );
   res.json({ ok: true, simulations });
 }));
 
 router.get('/:id', asyncHandler(async (req, res) => {
+  await assertSimulation(req.user, req.params.id, { professorWrite: true });
   const simulation = await get(
     db,
     `SELECT s.*, l.name AS laboratory_name
@@ -48,6 +54,7 @@ router.post('/', asyncHandler(async (req, res) => {
   if (!req.body.laboratory_id || !String(req.body.name || '').trim()) {
     throw httpError(400, 'Laboratorio y nombre son obligatorios.');
   }
+  await assertLaboratory(req.user, req.body.laboratory_id);
   const lab = await get(db, 'SELECT id FROM laboratories WHERE id = ? AND is_active = 1', [req.body.laboratory_id]);
   if (!lab) throw httpError(400, 'Laboratorio inválido o inactivo.');
   const duration = Number(req.body.planned_duration_minutes || 60);
@@ -61,10 +68,12 @@ router.post('/', asyncHandler(async (req, res) => {
      VALUES (?, ?, ?, ?, ?, 'draft')`,
     [lab.id, String(req.body.name).trim(), req.body.description || null, duration, req.user.id]
   );
+  await auditService.record({ req, action: 'simulation.created', entityType: 'simulation', entityId: result.lastID, simulationId: result.lastID });
   res.status(201).json({ ok: true, simulationId: result.lastID });
 }));
 
 router.put('/:id', asyncHandler(async (req, res) => {
+  await assertSimulation(req.user, req.params.id, { professorWrite: true });
   const simulation = await get(db, 'SELECT * FROM simulations WHERE id = ?', [req.params.id]);
   if (!simulation) throw httpError(404, 'Simulación no encontrada.');
   if (simulation.status !== 'draft') throw httpError(409, 'Solo se edita una simulación en borrador.');
@@ -79,10 +88,12 @@ router.put('/:id', asyncHandler(async (req, res) => {
       simulation.id
     ]
   );
+  await auditService.record({ req, action: 'simulation.updated', entityType: 'simulation', entityId: simulation.id, simulationId: simulation.id });
   res.json({ ok: true, message: 'Simulación actualizada.' });
 }));
 
 router.patch('/:id/status', asyncHandler(async (req, res) => {
+  await assertSimulation(req.user, req.params.id, { professorWrite: true });
   const target = req.body.status;
   const simulation = await get(db, 'SELECT * FROM simulations WHERE id = ?', [req.params.id]);
   if (!simulation) throw httpError(404, 'Simulación no encontrada.');
@@ -137,10 +148,19 @@ router.patch('/:id/status', asyncHandler(async (req, res) => {
     simulationId: simulation.id,
     status: target
   });
+  await auditService.record({
+    req,
+    action: `simulation.${target}`,
+    entityType: 'simulation',
+    entityId: simulation.id,
+    simulationId: simulation.id,
+    details: { previous_status: simulation.status }
+  });
   res.json({ ok: true, message: `Simulación actualizada a ${target}.` });
 }));
 
 router.post('/:id/participants', asyncHandler(async (req, res) => {
+  await assertSimulation(req.user, req.params.id, { professorWrite: true });
   const simulation = await get(db, 'SELECT * FROM simulations WHERE id = ?', [req.params.id]);
   if (!simulation) throw httpError(404, 'Simulación no encontrada.');
   if (simulation.status !== 'draft') throw httpError(409, 'Solo se asignan participantes en borrador.');
@@ -149,7 +169,9 @@ router.post('/:id/participants', asyncHandler(async (req, res) => {
   if (!['operator', 'supervisor', 'observer', 'manager'].includes(role)) {
     throw httpError(400, 'Rol inválido.');
   }
-  const user = await get(db, "SELECT id FROM users WHERE id = ? AND user_type = 'student' AND is_active = 1", [req.body.user_id]);
+  const ownerFilter = isAdmin(req.user) ? '' : 'AND owner_user_id = ?';
+  const userParams = isAdmin(req.user) ? [req.body.user_id] : [req.body.user_id, req.user.id];
+  const user = await get(db, `SELECT id FROM users WHERE id = ? AND user_type = 'student' AND is_active = 1 ${ownerFilter}`, userParams);
   if (!user) throw httpError(400, 'Alumno inválido o inactivo.');
 
   let lineId = req.body.line_id || null;
@@ -189,10 +211,12 @@ router.post('/:id/participants', asyncHandler(async (req, res) => {
        updated_at = CURRENT_TIMESTAMP`,
     [simulation.id, user.id, role, lineId, stationId]
   );
+  await auditService.record({ req, action: 'simulation.participant_assigned', entityType: 'simulation', entityId: simulation.id, simulationId: simulation.id, details: { user_id: user.id, role } });
   res.status(201).json({ ok: true, message: 'Participante asignado.' });
 }));
 
 router.delete('/:id/participants/:participantId', asyncHandler(async (req, res) => {
+  await assertSimulation(req.user, req.params.id, { professorWrite: true });
   const simulation = await get(db, 'SELECT status FROM simulations WHERE id = ?', [req.params.id]);
   if (!simulation) throw httpError(404, 'Simulación no encontrada.');
   if (simulation.status !== 'draft') throw httpError(409, 'Solo se quitan participantes en borrador.');

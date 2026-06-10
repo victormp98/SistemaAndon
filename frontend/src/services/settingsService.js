@@ -8,4 +8,5 @@ export default {
   save: (data) => apiClient.put('/settings', data, token()),
   backup: () => apiClient.post('/settings/backup', {}, token()),
   backups: () => apiClient.get('/settings/backups', token()),
+  restore: (name) => apiClient.post(`/settings/backups/${encodeURIComponent(name)}/restore`, {}, token()),
 };

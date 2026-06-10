@@ -1,8 +1,8 @@
 const db = require('../database/connection');
 const { run, get, all, transaction } = require('../database/dbUtils');
 const httpError = require('../utils/httpError');
-
-const MAX_TICKETS_PER_ORDER = 500;
+const settingsService = require('./settingsService');
+const auditService = require('./auditService');
 
 async function nextOrderCode() {
   return transaction(db, async () => {
@@ -15,8 +15,9 @@ async function nextOrderCode() {
 
 async function createOrder(payload, userId) {
   const quantity = Number(payload.target_quantity);
-  if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_TICKETS_PER_ORDER) {
-    throw httpError(400, `La cantidad debe ser un entero entre 1 y ${MAX_TICKETS_PER_ORDER}.`);
+  const maxTickets = await settingsService.getValue('max_ticket_quantity');
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > maxTickets) {
+    throw httpError(400, `La cantidad debe ser un entero entre 1 y ${maxTickets}.`);
   }
 
   const simulation = await get(db, 'SELECT * FROM simulations WHERE id = ?', [payload.simulation_id]);
@@ -73,8 +74,9 @@ async function generateTickets(orderId, userId) {
     if (!['draft', 'ready'].includes(order.simulation_status)) {
       throw httpError(400, 'La simulación ya no admite generar tickets.');
     }
-    if (order.target_quantity > MAX_TICKETS_PER_ORDER) {
-      throw httpError(400, `La orden excede el límite de ${MAX_TICKETS_PER_ORDER} tickets.`);
+    const maxTickets = await settingsService.getValue('max_ticket_quantity');
+    if (order.target_quantity > maxTickets) {
+      throw httpError(400, `La orden excede el límite de ${maxTickets} tickets.`);
     }
 
     const existing = await get(db, 'SELECT COUNT(*) AS total FROM production_tickets WHERE order_id = ?', [order.id]);
@@ -338,10 +340,17 @@ async function logEvent({ simulationId, orderId, ticketId, stationId, userId, ty
       payload ? JSON.stringify(payload) : null
     ]
   );
+  await auditService.record({
+    userId,
+    action: `production.${type}`,
+    entityType: ticketId ? 'ticket' : orderId ? 'order' : 'simulation',
+    entityId: ticketId || orderId || simulationId,
+    simulationId,
+    details: payload
+  });
 }
 
 module.exports = {
-  MAX_TICKETS_PER_ORDER,
   createOrder,
   generateTickets,
   getOperatorContext,

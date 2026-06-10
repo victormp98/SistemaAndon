@@ -22,7 +22,9 @@ const authService = {
     }, this.getToken());
   },
 
-  logout() {
+  async logout() {
+    const token = this.getToken();
+    if (token) await apiClient.post('/auth/logout', {}, token).catch(() => {});
     localStorage.removeItem('token');
   },
 

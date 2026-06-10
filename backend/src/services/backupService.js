@@ -2,6 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const db = require('../database/connection');
 const { run } = require('../database/dbUtils');
+const config = require('../config/appConfig');
+const httpError = require('../utils/httpError');
 
 const backupDir = path.resolve(__dirname, '../../../backups');
 
@@ -26,6 +28,45 @@ async function ensureDailyBackup(retention = 10) {
   files.slice(retention).forEach(({ name }) => fs.rmSync(path.join(backupDir, name)));
 }
 
+function safeBackupPath(name) {
+  const normalized = path.basename(String(name || ''));
+  if (!normalized.endsWith('.sqlite') || normalized !== name) throw httpError(400, 'Nombre de respaldo inválido.');
+  const filePath = path.join(backupDir, normalized);
+  if (!fs.existsSync(filePath)) throw httpError(404, 'Respaldo no encontrado.');
+  return filePath;
+}
+
+async function validateBackup(name) {
+  const source = safeBackupPath(name);
+  const sqlite3 = require('sqlite3').verbose();
+  const candidate = new sqlite3.Database(source, sqlite3.OPEN_READONLY);
+  const tables = await new Promise((resolve, reject) => {
+    candidate.all(
+      `SELECT name FROM sqlite_master WHERE type = 'table'
+       AND name IN ('users', 'simulations', 'production_orders', 'schema_migrations')`,
+      [],
+      (error, rows) => error ? reject(error) : resolve(rows)
+    );
+  }).finally(() => new Promise((resolve) => candidate.close(resolve)));
+  if (tables.length < 4) throw httpError(400, 'El archivo no es un respaldo válido de Sistema Andon.');
+  return source;
+}
+
+async function scheduleRestore(name) {
+  const source = await validateBackup(name);
+  const safetyBackup = await createBackup('pre-restore');
+  const databasePath = path.resolve(__dirname, '../../../', config.database.path);
+  const pendingPath = `${databasePath}.restore-pending`;
+  const markerPath = `${databasePath}.restore.json`;
+  fs.copyFileSync(source, pendingPath);
+  fs.writeFileSync(markerPath, JSON.stringify({
+    requested_at: new Date().toISOString(),
+    source_backup: path.basename(source),
+    safety_backup: safetyBackup
+  }, null, 2));
+  return { source_backup: path.basename(source), safety_backup: safetyBackup, restart_required: true };
+}
+
 function listBackups() {
   fs.mkdirSync(backupDir, { recursive: true });
   return fs.readdirSync(backupDir)
@@ -37,4 +78,4 @@ function listBackups() {
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
 
-module.exports = { createBackup, ensureDailyBackup, listBackups };
+module.exports = { createBackup, ensureDailyBackup, listBackups, scheduleRestore, validateBackup };

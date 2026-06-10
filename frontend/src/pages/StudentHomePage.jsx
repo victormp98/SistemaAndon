@@ -15,6 +15,8 @@ const StudentHomePage = ({ user }) => {
   const [completing, setCompleting] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [operationModal, setOperationModal] = useState(null);
+  const [operationForm, setOperationForm] = useState({ description: '', type: 'other', severity: 'medium', notes: '' });
 
   const loadData = useCallback(async () => {
     try {
@@ -82,11 +84,13 @@ const StudentHomePage = ({ user }) => {
     if (!currentTicket || completing) return;
     setCompleting(true);
     try {
-      const res = await operatorService.completeCurrentTicket();
+      const res = await operatorService.completeCurrentTicket(operationForm.notes);
       if (res.ok) {
         setSuccessMsg(res.result === 'completed' ? 'Ticket completado exitosamente.' : 'Ticket enviado a la siguiente estación.');
         setTimeout(() => setSuccessMsg(''), 4000);
         loadData();
+        setOperationModal(null);
+        setOperationForm({ description: '', type: 'other', severity: 'medium', notes: '' });
       } else {
         setError(res.error || 'Error al completar ticket.');
         setTimeout(() => setError(''), 4000);
@@ -100,30 +104,38 @@ const StudentHomePage = ({ user }) => {
   };
 
   const reportIncident = async () => {
-    const description = window.prompt('Describe el incidente:');
-    if (!description) return;
+    const description = operationForm.description.trim();
+    if (!description) return setError('Describe el incidente.');
     const result = await incidentsService.create({
       simulation_id: context.simulation_id,
       line_id: context.line_id,
       station_id: context.station_id,
       ticket_id: currentTicket?.id,
-      type: 'other',
-      severity: 'medium',
+      type: operationForm.type,
+      severity: operationForm.severity,
       description
     });
-    setSuccessMsg(result.ok ? 'Incidente reportado.' : result.error);
+    if (result.ok) {
+      setSuccessMsg('Incidente reportado.');
+      setOperationModal(null);
+      setOperationForm({ description: '', type: 'other', severity: 'medium', notes: '' });
+    } else setError(result.error);
   };
 
   const reportDowntime = async () => {
-    const reason = window.prompt('Motivo del paro:');
-    if (!reason) return;
+    const reason = operationForm.description.trim();
+    if (!reason) return setError('Describe el motivo del paro.');
     const result = await incidentsService.createDowntime({
       simulation_id: context.simulation_id,
       station_id: context.station_id,
       ticket_id: currentTicket?.id,
       reason
     });
-    setSuccessMsg(result.ok ? 'Paro reportado.' : result.error);
+    if (result.ok) {
+      setSuccessMsg('Paro reportado.');
+      setOperationModal(null);
+      setOperationForm({ description: '', type: 'other', severity: 'medium', notes: '' });
+    } else setError(result.error);
   };
 
   if (loading) return <div className="loading-screen">Cargando contexto...</div>;
@@ -151,8 +163,8 @@ const StudentHomePage = ({ user }) => {
       </header>
 
       <div className="page-header-actions">
-        <button className="btn-secondary" onClick={reportIncident}>Reportar incidente</button>
-        <button className="btn-outline btn-warn-outline" onClick={reportDowntime}>Reportar paro</button>
+        <button className="btn-secondary" onClick={() => setOperationModal('incident')}>Reportar incidente</button>
+        <button className="btn-outline btn-warn-outline" onClick={() => setOperationModal('downtime')}>Reportar paro</button>
       </div>
 
       {error && <div className="alert error">{error}</div>}
@@ -212,7 +224,7 @@ const StudentHomePage = ({ user }) => {
                 <p className="time-info">Iniciado: {new Date(currentTicket.started_at + 'Z').toLocaleTimeString()}</p>
                 <button 
                   className="btn-primary" 
-                  onClick={handleCompleteTicket} 
+                  onClick={() => setOperationModal('complete')}
                   disabled={completing}
                   style={{ width: '100%', marginTop: '1rem', padding: '0.8rem', fontSize: '1.1rem' }}
                 >
@@ -263,6 +275,11 @@ const StudentHomePage = ({ user }) => {
           </div>
         </section>
       </div>
+      {operationModal && <div className="modal-overlay"><div className="modal-content card"><header className="modal-header"><h2>{operationModal === 'incident' ? 'Reportar incidente' : operationModal === 'downtime' ? 'Reportar paro' : 'Completar ticket'}</h2><button className="btn-close" onClick={() => setOperationModal(null)}>&times;</button></header>
+        {operationModal === 'incident' && <div className="form-grid"><div className="form-group"><label>Tipo</label><select value={operationForm.type} onChange={(e) => setOperationForm({ ...operationForm, type: e.target.value })}><option value="defect">Defecto</option><option value="quality">Calidad</option><option value="safety">Seguridad</option><option value="material">Material</option><option value="other">Otro</option></select></div><div className="form-group"><label>Severidad</label><select value={operationForm.severity} onChange={(e) => setOperationForm({ ...operationForm, severity: e.target.value })}><option value="low">Baja</option><option value="medium">Media</option><option value="high">Alta</option><option value="critical">Crítica</option></select></div></div>}
+        <div className="form-group"><label>{operationModal === 'complete' ? 'Notas de operación' : 'Descripción'}</label><textarea value={operationModal === 'complete' ? operationForm.notes : operationForm.description} onChange={(e) => setOperationForm({ ...operationForm, [operationModal === 'complete' ? 'notes' : 'description']: e.target.value })} rows="4" required={operationModal !== 'complete'} /></div>
+        <div className="modal-footer"><button className="btn-secondary" onClick={() => setOperationModal(null)}>Cancelar</button><button className="btn-primary" onClick={operationModal === 'incident' ? reportIncident : operationModal === 'downtime' ? reportDowntime : handleCompleteTicket}>Confirmar</button></div>
+      </div></div>}
     </div>
   );
 };

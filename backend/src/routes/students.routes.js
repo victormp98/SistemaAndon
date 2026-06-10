@@ -1,203 +1,141 @@
 const express = require('express');
-const router = express.Router();
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const db = require('../database/connection');
+const { run, get, all } = require('../database/dbUtils');
 const authMiddleware = require('../middleware/authMiddleware');
 const { requireProfessor } = require('../middleware/roleMiddleware');
+const asyncHandler = require('../middleware/asyncHandler');
+const httpError = require('../utils/httpError');
+const { isAdmin } = require('../services/accessService');
+const auditService = require('../services/auditService');
 
-// All routes here require professor authentication
-router.use(authMiddleware);
-router.use(requireProfessor);
+const router = express.Router();
+router.use(authMiddleware, requireProfessor);
 
-/**
- * GET /api/students
- * List all users with user_type = 'student'
- * Optional: ?search=term
- */
-router.get('/', (req, res) => {
-  const { search } = req.query;
-  let query = `
-    SELECT id, name, username, email, user_type, student_code, group_name, is_active, must_change_password, created_at 
-    FROM users 
-    WHERE user_type = 'student'
-  `;
-  const params = [];
+function ownerClause(req, alias = 'u') {
+  return isAdmin(req.user) ? { sql: '1=1', params: [] } : { sql: `${alias}.owner_user_id = ?`, params: [req.user.id] };
+}
 
-  if (search) {
-    query += ` AND (
-      name LIKE ? OR 
-      username LIKE ? OR 
-      email LIKE ? OR 
-      student_code LIKE ? OR 
-      group_name LIKE ?
-    )`;
-    const term = `%${search}%`;
+async function assertStudent(req, id) {
+  const scope = ownerClause(req);
+  const student = await get(
+    db,
+    `SELECT id, name, username, email, user_type, student_code, group_name,
+      owner_user_id, is_active, must_change_password, created_at
+     FROM users u WHERE u.id = ? AND u.user_type = 'student' AND ${scope.sql}`,
+    [id, ...scope.params]
+  );
+  if (!student) throw httpError(404, 'Alumno no encontrado.');
+  return student;
+}
+
+router.get('/', asyncHandler(async (req, res) => {
+  const scope = ownerClause(req);
+  const params = [...scope.params];
+  let search = '';
+  if (req.query.search) {
+    search = ` AND (u.name LIKE ? OR u.username LIKE ? OR u.email LIKE ?
+      OR u.student_code LIKE ? OR u.group_name LIKE ?)`;
+    const term = `%${String(req.query.search).trim()}%`;
     params.push(term, term, term, term, term);
   }
+  const students = await all(
+    db,
+    `SELECT u.id, u.name, u.username, u.email, u.user_type, u.student_code,
+      u.group_name, u.owner_user_id, u.is_active, u.must_change_password, u.created_at,
+      owner.name AS owner_name
+     FROM users u LEFT JOIN users owner ON owner.id = u.owner_user_id
+     WHERE u.user_type = 'student' AND ${scope.sql}${search}
+     ORDER BY u.name`,
+    params
+  );
+  res.json({ ok: true, students });
+}));
 
-  query += " ORDER BY name ASC";
+router.get('/:id', asyncHandler(async (req, res) => {
+  res.json({ ok: true, student: await assertStudent(req, req.params.id) });
+}));
 
-  db.all(query, params, (err, rows) => {
-    if (err) {
-      console.error('Error fetching students:', err);
-      return res.status(500).json({ ok: false, error: 'Error al obtener alumnos.' });
-    }
-    res.json({ ok: true, students: rows });
-  });
-});
-
-/**
- * GET /api/students/:id
- * Get details of a specific student
- */
-router.get('/:id', (req, res) => {
-  const { id } = req.params;
-  const query = "SELECT id, name, username, email, user_type, student_code, group_name, is_active, must_change_password, created_at FROM users WHERE id = ? AND user_type = 'student'";
-  
-  db.get(query, [id], (err, student) => {
-    if (err) return res.status(500).json({ ok: false, error: 'Error al obtener el alumno.' });
-    if (!student) return res.status(404).json({ ok: false, error: 'Alumno no encontrado.' });
-    res.json({ ok: true, student });
-  });
-});
-
-/**
- * POST /api/students
- * Create a new student
- */
-router.post('/', async (req, res) => {
-  const { name, username, email, student_code, group_name, temporary_password } = req.body;
-
-  if (!name || !username || !email) {
-    return res.status(400).json({ ok: false, error: 'Nombre, usuario y correo son campos obligatorios.' });
-  }
-
-  // Generate a simple random password if none provided
-  const passwordToHash = temporary_password || crypto.randomBytes(9).toString('base64url');
-  
+router.post('/', asyncHandler(async (req, res) => {
+  const name = String(req.body.name || '').trim();
+  const username = String(req.body.username || '').trim();
+  const email = String(req.body.email || '').trim();
+  if (!name || !username || !email) throw httpError(400, 'Nombre, usuario y correo son obligatorios.');
+  const password = String(req.body.temporary_password || crypto.randomBytes(9).toString('base64url'));
+  if (password.length < 8) throw httpError(400, 'La contraseña temporal debe tener al menos 8 caracteres.');
+  const passwordHash = await bcrypt.hash(password, 12);
   try {
-    const passwordHash = await bcrypt.hash(passwordToHash, 10);
-    const query = `
-      INSERT INTO users (
-        name, username, email, password_hash, user_type, student_code, group_name, is_active, must_change_password
-      ) VALUES (?, ?, ?, ?, 'student', ?, ?, 1, 1)
-    `;
-
-    db.run(query, [name, username, email, passwordHash, student_code, group_name], function(err) {
-      if (err) {
-        if (err.message.includes('UNIQUE')) {
-          return res.status(400).json({ ok: false, error: 'El nombre de usuario o correo electrónico ya están registrados.' });
-        }
-        console.error('Error creating student:', err);
-        return res.status(500).json({ ok: false, error: 'Error interno al crear el alumno.' });
-      }
-
-      res.status(201).json({
-        ok: true,
-        student: {
-          id: this.lastID,
-          name,
-          username,
-          email,
-          student_code,
-          group_name,
-          user_type: 'student',
-          is_active: 1,
-          must_change_password: 1
-        },
-        // Only return the generated password if it was NOT provided in the body
-        temporary_password: temporary_password ? undefined : passwordToHash
-      });
+    const result = await run(
+      db,
+      `INSERT INTO users
+       (name, username, email, password_hash, user_type, student_code, group_name,
+        owner_user_id, is_active, must_change_password)
+       VALUES (?, ?, ?, ?, 'student', ?, ?, ?, 1, 1)`,
+      [name, username, email, passwordHash, req.body.student_code || null, req.body.group_name || null, req.user.id]
+    );
+    await auditService.record({ req, action: 'student.created', entityType: 'user', entityId: result.lastID });
+    res.status(201).json({
+      ok: true,
+      student: { id: result.lastID, name, username, email, user_type: 'student', owner_user_id: req.user.id, is_active: 1, must_change_password: 1 },
+      temporary_password: req.body.temporary_password ? undefined : password
     });
   } catch (error) {
-    console.error('Hashing error:', error);
-    res.status(500).json({ ok: false, error: 'Error al procesar la contraseña.' });
+    if (error.message.includes('UNIQUE')) throw httpError(409, 'El usuario o correo ya existe.');
+    throw error;
   }
-});
+}));
 
-/**
- * PUT /api/students/:id
- * Update student basic info
- */
-router.put('/:id', (req, res) => {
-  const { id } = req.params;
-  const { name, username, email, student_code, group_name, is_active } = req.body;
-
-  if (!name || !username || !email) {
-    return res.status(400).json({ ok: false, error: 'Nombre, usuario y correo son campos obligatorios.' });
-  }
-
-  const query = `
-    UPDATE users 
-    SET name = ?, username = ?, email = ?, student_code = ?, group_name = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ? AND user_type = 'student'
-  `;
-
-  db.run(query, [name, username, email, student_code, group_name, is_active, id], function(err) {
-    if (err) {
-      if (err.message.includes('UNIQUE')) {
-        return res.status(400).json({ ok: false, error: 'El nombre de usuario o correo electrónico ya están en uso.' });
-      }
-      return res.status(500).json({ ok: false, error: 'Error al actualizar el alumno.' });
-    }
-    
-    if (this.changes === 0) {
-      return res.status(404).json({ ok: false, error: 'Alumno no encontrado.' });
-    }
-
-    res.json({ ok: true, message: 'Alumno actualizado correctamente.' });
-  });
-});
-
-/**
- * PATCH /api/students/:id/status
- * Enable or disable a student
- */
-router.patch('/:id/status', (req, res) => {
-  const { id } = req.params;
-  const { is_active } = req.body;
-
-  if (is_active === undefined) {
-    return res.status(400).json({ ok: false, error: 'Estado is_active es requerido.' });
-  }
-
-  const query = "UPDATE users SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_type = 'student'";
-  
-  db.run(query, [is_active ? 1 : 0, id], function(err) {
-    if (err) return res.status(500).json({ ok: false, error: 'Error al cambiar el estado del alumno.' });
-    if (this.changes === 0) return res.status(404).json({ ok: false, error: 'Alumno no encontrado.' });
-    res.json({ ok: true, message: `Alumno ${is_active ? 'activado' : 'desactivado'} correctamente.` });
-  });
-});
-
-/**
- * POST /api/students/:id/reset-password
- * Reset student password to a new temporary one
- */
-router.post('/:id/reset-password', async (req, res) => {
-  const { id } = req.params;
-  const { temporary_password } = req.body;
-
-  const newPassword = temporary_password || crypto.randomBytes(9).toString('base64url');
-
+router.put('/:id', asyncHandler(async (req, res) => {
+  const student = await assertStudent(req, req.params.id);
+  const name = String(req.body.name || '').trim();
+  const username = String(req.body.username || '').trim();
+  const email = String(req.body.email || '').trim();
+  if (!name || !username || !email) throw httpError(400, 'Nombre, usuario y correo son obligatorios.');
   try {
-    const passwordHash = await bcrypt.hash(newPassword, 10);
-    const query = "UPDATE users SET password_hash = ?, must_change_password = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_type = 'student'";
-
-    db.run(query, [passwordHash, id], function(err) {
-      if (err) return res.status(500).json({ ok: false, error: 'Error al resetear la contraseña.' });
-      if (this.changes === 0) return res.status(404).json({ ok: false, error: 'Alumno no encontrado.' });
-      
-      res.json({ 
-        ok: true, 
-        message: 'Contraseña reseteada correctamente.',
-        temporary_password: newPassword
-      });
-    });
+    await run(
+      db,
+      `UPDATE users SET name = ?, username = ?, email = ?, student_code = ?,
+       group_name = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [name, username, email, req.body.student_code || null, req.body.group_name || null, req.body.is_active ? 1 : 0, student.id]
+    );
   } catch (error) {
-    res.status(500).json({ ok: false, error: 'Error al procesar la nueva contraseña.' });
+    if (error.message.includes('UNIQUE')) throw httpError(409, 'El usuario o correo ya está en uso.');
+    throw error;
   }
-});
+  await auditService.record({ req, action: 'student.updated', entityType: 'user', entityId: student.id });
+  res.json({ ok: true, message: 'Alumno actualizado.' });
+}));
+
+router.patch('/:id/status', asyncHandler(async (req, res) => {
+  const student = await assertStudent(req, req.params.id);
+  await run(
+    db,
+    'UPDATE users SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+    [req.body.is_active ? 1 : 0, student.id]
+  );
+  await auditService.record({
+    req,
+    action: req.body.is_active ? 'student.activated' : 'student.deactivated',
+    entityType: 'user',
+    entityId: student.id
+  });
+  res.json({ ok: true, message: 'Estado actualizado.' });
+}));
+
+router.post('/:id/reset-password', asyncHandler(async (req, res) => {
+  const student = await assertStudent(req, req.params.id);
+  const password = String(req.body.temporary_password || crypto.randomBytes(9).toString('base64url'));
+  if (password.length < 8) throw httpError(400, 'La contraseña temporal debe tener al menos 8 caracteres.');
+  await run(
+    db,
+    `UPDATE users SET password_hash = ?, must_change_password = 1,
+     updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    [await bcrypt.hash(password, 12), student.id]
+  );
+  await run(db, 'UPDATE auth_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = ?', [student.id]);
+  await auditService.record({ req, action: 'student.password_reset', entityType: 'user', entityId: student.id });
+  res.json({ ok: true, message: 'Contraseña restablecida.', temporary_password: password });
+}));
 
 module.exports = router;

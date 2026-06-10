@@ -237,6 +237,63 @@ const migrations = [
       `CREATE INDEX IF NOT EXISTS idx_incidents_simulation_status ON incidents(simulation_id, status)`,
       `CREATE INDEX IF NOT EXISTS idx_downtime_simulation_status ON downtime_events(simulation_id, status)`
     ]
+  },
+  {
+    version: 3,
+    statements: [
+      `ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE users ADD COLUMN owner_user_id INTEGER REFERENCES users(id)`,
+      `CREATE TABLE IF NOT EXISTS auth_sessions (
+        id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        expires_at DATETIME NOT NULL,
+        revoked_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )`,
+      `CREATE TABLE IF NOT EXISTS audit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        action TEXT NOT NULL,
+        entity_type TEXT,
+        entity_id TEXT,
+        simulation_id INTEGER,
+        success INTEGER NOT NULL DEFAULT 1,
+        details_json TEXT,
+        ip_address TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (simulation_id) REFERENCES simulations(id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_users_owner ON users(owner_user_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_sessions_user ON auth_sessions(user_id, revoked_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(user_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_audit_simulation ON audit_logs(simulation_id)`,
+      `UPDATE users SET is_admin = 1 WHERE username = 'admin'`,
+      `UPDATE users SET owner_user_id = (
+        SELECT id FROM users WHERE username = 'admin'
+      ) WHERE user_type = 'student' AND owner_user_id IS NULL`,
+      `UPDATE laboratories SET created_by_user_id = (
+        SELECT id FROM users WHERE username = 'admin'
+      ) WHERE created_by_user_id IS NULL`,
+      `UPDATE simulations SET created_by_user_id = (
+        SELECT id FROM users WHERE username = 'admin'
+      ) WHERE created_by_user_id IS NULL`,
+      `UPDATE production_orders SET created_by_user_id = (
+        SELECT id FROM users WHERE username = 'admin'
+      ) WHERE created_by_user_id IS NULL`
+    ]
+  },
+  {
+    version: 4,
+    statements: [
+      `INSERT OR IGNORE INTO app_settings (key, value) VALUES ('organization_name', 'Laboratorio Industrial')`,
+      `INSERT OR IGNORE INTO app_settings (key, value) VALUES ('andon_refresh_seconds', '15')`,
+      `INSERT OR IGNORE INTO app_settings (key, value) VALUES ('max_ticket_quantity', '500')`,
+      `INSERT OR IGNORE INTO app_settings (key, value) VALUES ('backup_retention', '10')`
+    ]
   }
 ];
 
@@ -272,10 +329,11 @@ async function seedInitialAdmin(db) {
   await run(
     db,
     `INSERT INTO users
-      (name, username, email, password_hash, user_type, is_active, must_change_password)
+     (name, username, email, password_hash, user_type, is_active, must_change_password)
      VALUES (?, ?, ?, ?, 'professor', 1, 1)`,
     ['Profesor Administrador', 'admin', 'admin@local.test', passwordHash]
   );
+  await run(db, "UPDATE users SET is_admin = 1 WHERE username = 'admin'");
 }
 
 module.exports = { initSchema, seedInitialAdmin };

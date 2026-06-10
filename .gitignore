@@ -17,7 +17,12 @@ backups/*
 # Local configuration and secrets
 .env
 .env.*
+!.env.example
 *.local
+
+# Generated release packages
+release/
+SistemaAndon-Producto-Final.zip
 
 # Logs and tooling
 *.log

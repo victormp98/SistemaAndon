@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import ordersService from '../services/ordersService';
 import simulationsService from '../services/simulationsService';
 import laboratoriesService from '../services/laboratoriesService';
+import settingsService from '../services/settingsService';
 
 const PRIORITY_LABELS = { low: 'Baja', medium: 'Media', high: 'Alta', urgent: 'Urgente' };
 const PRIORITY_COLORS = { low: 'muted', medium: 'info', high: 'warning', urgent: 'error' };
@@ -20,11 +21,18 @@ const OrdersPage = () => {
   const [formData, setFormData] = useState({ product_name: '', line_id: '', target_quantity: 10, priority: 'medium' });
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [maxQuantity, setMaxQuantity] = useState(500);
 
   // Load draft simulations on mount
   useEffect(() => {
     simulationsService.getSimulations().then(res => {
       if (res.ok) setSimulations(res.simulations.filter(s => ['draft', 'ready'].includes(s.status)));
+    });
+  }, []);
+  useEffect(() => {
+    settingsService.get().then((result) => {
+      const item = result.settings?.find((setting) => setting.key === 'max_ticket_quantity');
+      if (item) setMaxQuantity(Number(item.value));
     });
   }, []);
 
@@ -262,11 +270,12 @@ const OrdersPage = () => {
                 <div className="form-group">
                   <label>Cantidad Objetivo*</label>
                   <input
-                    type="number" min="1" max="200"
+                    type="number" min="1" max={maxQuantity}
                     value={formData.target_quantity}
                     onChange={e => setFormData({ ...formData, target_quantity: parseInt(e.target.value) })}
                     required
                   />
+                  <small>Máximo configurado: {maxQuantity}</small>
                 </div>
                 <div className="form-group">
                   <label>Prioridad</label>
