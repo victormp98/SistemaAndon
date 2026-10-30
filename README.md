@@ -76,3 +76,10 @@ sofial / sofia123
 - [Pruebas LAN](docs/lan-testing-guide.md)
 - [Paquete de entrega](docs/release-package.md)
 - [Estado final](docs/final-product-status.md)
+
+
+## Orígenes CORS permitidos
+
+El backend acepta peticiones sin encabezado `Origin` (por ejemplo, ciertas herramientas de línea de comandos), el origen local configurado y los orígenes declarados explícitamente mediante `CORS_ORIGINS` (separados por comas). Ya no se autoriza automáticamente cualquier origen en una red privada. Para utilizar una interfaz alojada en otro equipo de la LAN, añade su URL exacta a `CORS_ORIGINS` en el servidor antes de arrancar.
+
+Las credenciales incluidas en la sección de datos TEST son exclusivamente para instalaciones de demostración y no deben reutilizarse en una instancia real con datos o acceso a una red no confiable.
