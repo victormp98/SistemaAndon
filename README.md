@@ -48,21 +48,7 @@ En el paquete abrir `desktop-launcher\INICIAR_SISTEMA_ANDON.cmd`.
 
 ## Datos TEST
 
-Ejecutar `npm.cmd run seed:demo` o seleccionar `Cargar/restablecer datos TEST` en el launcher.
-
-Credenciales:
-
-```text
-admin / admin123
-prof1 / prof123
-prof2 / prof123
-juanp / juanp123
-anag / anag123
-carlosm / carlos123
-mariag / mariag123
-luisr / luis123
-sofial / sofia123
-```
+Inicializar usuarios y registros ficticios con `npm.cmd run seed:demo`. Las cuentas de demostración se describen en la lógica de inicialización; utiliza una base de datos de prueba aislada.
 
 ## Documentación
 
@@ -78,8 +64,29 @@ sofial / sofia123
 - [Estado final](docs/final-product-status.md)
 
 
-## Orígenes CORS permitidos
+## Red local y CORS
 
-El backend acepta peticiones sin encabezado `Origin` (por ejemplo, ciertas herramientas de línea de comandos), el origen local configurado y los orígenes declarados explícitamente mediante `CORS_ORIGINS` (separados por comas). Ya no se autoriza automáticamente cualquier origen en una red privada. Para utilizar una interfaz alojada en otro equipo de la LAN, añade su URL exacta a `CORS_ORIGINS` en el servidor antes de arrancar.
+El frontend compilado se sirve desde el backend. Para desarrollar con Vite, el backend permite `http://localhost:5173`, además de `http://localhost:<PUERTO_BACKEND>`.
 
-Las credenciales incluidas en la sección de datos TEST son exclusivamente para instalaciones de demostración y no deben reutilizarse en una instancia real con datos o acceso a una red no confiable.
+Para usar un frontend alojado en otro equipo, declara cada origen HTTP(S) completo en `CORS_ORIGINS`. La coincidencia incluye esquema, host y puerto:
+
+```dotenv
+CORS_ORIGINS=http://192.168.1.25:5173,http://equipo-lan:5173
+```
+
+`CORS_ORIGINS` controla las solicitudes de navegador con encabezado `Origin`; no sustituye la autenticación, autorización, TLS ni las reglas del firewall. Las conexiones HTTP sin ese encabezado no dependen de CORS.
+
+Para ejecutar la API en una interfaz LAN, comprueba `HOST`, `PORT` y el firewall del equipo anfitrión. La dirección configurada debe ser accesible desde el cliente.
+
+## Cuentas de demostración
+
+`npm.cmd run seed:demo` genera usuarios y datos ficticios para ejercicios. Utiliza estas cuentas únicamente en una base de pruebas aislada; evita contraseñas de ejemplo en instalaciones con usuarios reales o acceso no confiable.
+
+## Configuración de seguridad
+
+- `JWT_SECRET`: secreto privado obligatorio para emitir y validar sesiones.
+- `HTTPS_ENABLED`, `HTTPS_KEY_PATH` y `HTTPS_CERT_PATH`: servidor TLS opcional.
+- `CORS_ORIGINS`: lista explícita de interfaces web autorizadas.
+- `DATABASE_PATH`: ubicación del archivo SQLite.
+
+Los secretos y las bases de datos locales deben permanecer fuera de Git.
