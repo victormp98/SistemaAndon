@@ -45,7 +45,7 @@ function createApp() {
   }));
   app.use(cors({
     origin(origin, callback) {
-      if (!origin || allowedOrigins.has(origin) || /^https?:\/\/(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(origin)) {
+      if (!origin || allowedOrigins.has(origin)) {
         return callback(null, true);
       }
       callback(new Error('Origen no permitido por CORS.'));
